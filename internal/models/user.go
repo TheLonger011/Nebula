@@ -9,8 +9,9 @@ type User struct {
 	ID              uuid.UUID  `json:"id"`
 	Username        string     `json:"username"`
 	DisplayName     string     `json:"display_name"`
-	Email           string     `json:"email"`
+	Email           string     `json:"-"`
 	PasswordHash    string     `json:"-"`
+	BirthDate       time.Time  `json:"birth_date"`
 	AvatarURL       *string    `json:"avatar_url"`
 	Bio             *string    `json:"bio"`
 	LastSeenAt      *time.Time `json:"last_seen_at"`
