@@ -5,3 +5,4 @@ dist/
 *.log
 vendor
 node_modules/
+.env
