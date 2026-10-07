@@ -1,0 +1,23 @@
+.row {
+    display: flex;
+    gap: var(--space-2);
+    justify-content: center;
+}
+
+.cell {
+    width: 44px;
+    height: 52px;
+    text-align: center;
+    font-size: 20px;
+    font-weight: 600;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text);
+    transition: border-color var(--transition-fast);
+}
+
+.cell:focus {
+    outline: none;
+    border-color: var(--color-accent);
+}

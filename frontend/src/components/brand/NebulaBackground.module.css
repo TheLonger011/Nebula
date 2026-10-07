@@ -1,0 +1,17 @@
+.bg {
+    position: absolute;
+    inset: 0;
+    background: #0b0b0b url('/background.jpg') center/cover no-repeat;
+    z-index: 0;
+}
+
+.bg::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+            135deg,
+            rgba(15, 15, 15, 0.85) 0%,
+            rgba(15, 15, 15, 0.65) 100%
+    );
+}

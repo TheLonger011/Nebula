@@ -1,0 +1,16 @@
+.layout {
+    display: grid;
+    grid-template-columns: var(--sidebar-spaces) var(--sidebar-channels) 1fr var(--panel-members);
+    height: 100vh;
+    background: var(--color-bg);
+    overflow: hidden;
+}
+
+.middle { background: var(--color-surface); border-right: 1px solid var(--color-border); }
+.center { background: var(--color-bg); overflow: hidden; }
+
+@media (max-width: 1280px) {
+    .layout {
+        grid-template-columns: var(--sidebar-spaces) var(--sidebar-channels) 1fr;
+    }
+}
