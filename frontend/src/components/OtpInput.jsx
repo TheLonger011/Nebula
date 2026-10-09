@@ -1,6 +1,11 @@
 import { useRef } from 'react'
 
-export default function OtpInput({ length = 6, value, onChange }) {
+export default function OtpInput({
+    length = 6,
+    value = '',
+    onChange,
+    disabled = false,
+}) {
     const refs = useRef([])
     const cells = value.split('').concat(Array(length).fill('')).slice(0, length)
 
@@ -13,15 +18,18 @@ export default function OtpInput({ length = 6, value, onChange }) {
     }
 
     const handleKeyDown = (i, e) => {
-        if (e.key === 'Backspace' && !cells[i] && i > 0) refs.current[i - 1]?.focus()
+        if (e.key === 'Backspace' && !cells[i] && i > 0) {
+            refs.current[i - 1]?.focus()
+        }
     }
 
     const handlePaste = (e) => {
         e.preventDefault()
-        const text = (e.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, length)
+        const text = (e.clipboardData.getData('text') || '')
+            .replace(/\D/g, '')
+            .slice(0, length)
         onChange(text)
-        const last = Math.min(text.length, length - 1)
-        refs.current[last]?.focus()
+        refs.current[Math.min(text.length, length - 1)]?.focus()
     }
 
     return (
@@ -29,13 +37,19 @@ export default function OtpInput({ length = 6, value, onChange }) {
             {cells.map((c, i) => (
                 <input
                     key={i}
-                    ref={el => (refs.current[i] = el)}
+                    ref={(el) => {
+                        refs.current[i] = el
+                    }}
                     className="otp__cell"
                     value={c}
                     inputMode="numeric"
+                    autoComplete={i === 0 ? 'one-time-code' : 'off'}
+                    autoFocus={i === 0}
                     maxLength={1}
-                    onChange={e => handleChange(i, e.target.value)}
-                    onKeyDown={e => handleKeyDown(i, e)}
+                    disabled={disabled}
+                    aria-label={`Цифра ${i + 1} из ${length}`}
+                    onChange={(e) => handleChange(i, e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(i, e)}
                     onPaste={handlePaste}
                 />
             ))}

@@ -1,138 +1,165 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-
-const CHANNELS = [
-    { name: 'код-ревью',      desc: 'Go-практика' },
-    { name: 'общий',          desc: 'Go-практика' },
-    { name: 'вопросы-по-go',  desc: '3 новых' },
-    { name: 'обсуждение',     desc: 'Курсовая' },
-    { name: 'Wortschatz',     desc: 'Немецкий' },
-    { name: 'вакансии',       desc: 'Go-практика' },
-]
-
-const SPACES = [
-    { icon: '● • ●', name: 'Rust по-русски', members: '212 человек' },
-    { icon: '◉',     name: 'Ночной код',     members: '86 человек' },
-    { icon: '✦',     name: 'Дизайн-кухня',   members: '340 человек' },
-    { icon: 'N',     name: 'Лофи-чат',       members: '1,2 тыс.' },
-]
-
-const FRIENDS = [
-    { avatar: 'Ал', name: 'Алина', status: 'в голосе', online: true },
-    { avatar: 'Дм', name: 'Дима',  status: 'в голосе', online: true },
-    { avatar: 'Ир', name: 'Ирина', status: 'в сети',   online: true },
-    { avatar: 'Сш', name: 'Саша',  status: 'не в сети', online: false },
-]
+import Sidebar from '@/components/Sidebar'
+import NavigationRail from '@/components/NavigationRail'
+import RightSidebar from '@/components/RightSidebar'
+import InviteDialog from '@/components/InviteDialog'
+import Avatar from '@/components/Avatar'
+import EmptyState from '@/components/EmptyState'
+import { api } from '@/api'
 
 export default function Home() {
+    const [channels, setChannels] = useState([])
+    const [spaces, setSpaces] = useState([])
+    const [friends, setFriends] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState('')
+    const [inviteOpen, setInviteOpen] = useState(false)
+
+    const load = async () => {
+        setLoading(true); setError('')
+        try {
+            const [c, s, f] = await Promise.all([
+                api.getChannels(),
+                api.getSpaces(),
+                api.getFriends(),
+            ])
+            setChannels(c); setSpaces(s); setFriends(f)
+        } catch (e) {
+            setError(e?.message || 'Не удалось загрузить главную')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    useEffect(() => { load() }, [])
+
     return (
-        <div className="app-feed">
-            {/* RAIL */}
-            <aside className="app-rail">
-                <div className="app-brand">✣</div>
-                <div className="rail-btn rail-btn--active">⌂</div>
-                <div className="rail-btn">Go</div>
-                <div className="rail-btn">Кр</div>
-                <div className="rail-btn">De</div>
-                <div className="rail-plus">+</div>
-            </aside>
+        <div className="app-layout">
+            <NavigationRail />
+            <Sidebar />
 
-            {/* LEFT SIDEBAR */}
-            <aside className="app-left">
-                <h2>Главная</h2>
-                <nav>
-                    <Link className="app-left__item app-left__item--selected">⌂ &nbsp; Лента</Link>
-                    <Link className="app-left__item">⌕ &nbsp; Поиск</Link>
-                    <Link className="app-left__item">♧ &nbsp; Друзья</Link>
-                    <Link className="app-left__item">▢ &nbsp; Сообщения</Link>
-                </nav>
-
-                <div className="section-label">
-                    ЛИЧНЫЕ СООБЩЕНИЯ <b>+</b>
+            <main className="main">
+                <div className="main__topbar">
+                    <input className="main__search" placeholder="Поиск…" readOnly />
+                    <nav className="main__tabs">
+                        <span className="main__tab main__tab--active">Главная</span>
+                        <Link to="/app/dm" className="main__tab">Потоки</Link>
+                        <Link to="/app/friends" className="main__tab">Люди</Link>
+                    </nav>
+                    <button
+                        type="button"
+                        className="main__invite"
+                        onClick={() => setInviteOpen(true)}
+                    >
+                        Пригласить
+                    </button>
                 </div>
 
-                {FRIENDS.map(f => (
-                    <div key={f.name} className="app-person">
-                        <i className={f.online ? '' : 'gray'}>{f.avatar}</i>
-                        <span>{f.name}</span>
-                        <em>{f.status}</em>
-                    </div>
-                ))}
+                <div className="main__content">
+                    <h1 className="main__hello">Добрый вечер</h1>
 
-                <div className="app-voice">
-                    Голос подключён<br />
-                    <small>Комната 1 · Go-практика</small>
-                </div>
-            </aside>
+                    {loading && <p className="muted">Загрузка…</p>}
 
-            {/* FEED */}
-            <main className="app-feed-main">
-                <header className="feed-header">
-                    <div className="feed-search">⌕ &nbsp; Поиск...</div>
-                    <div className="feed-tabs">
-                        <b>Главная</b>
-                        <span>Потоки</span>
-                        <span>Люди</span>
-                    </div>
-                    <button className="feed-invite">Пригласить</button>
-                </header>
+                    {error && (
+                        <>
+                            <p className="auth-inline-error">{error}</p>
+                            <button className="btn btn--ghost" onClick={load}>Повторить</button>
+                        </>
+                    )}
 
-                <h1>Добрый вечер</h1>
+                    {!loading && !error && channels.length === 0 && (
+                        <EmptyState
+                            icon="#"
+                            title="Каналов пока нет"
+                            description="Создайте первый канал в пространстве, чтобы начать общение."
+                        />
+                    )}
 
-                <div className="channels">
-                    {CHANNELS.map(ch => (
-                        <Link key={ch.name} to={`/app/channels/${ch.name}`} className="channel-item">
-                            <strong># &nbsp; {ch.name}</strong>
-                            <small>{ch.desc}</small>
-                            <b>→</b>
-                        </Link>
-                    ))}
-                </div>
-
-                <h2 className="feed-h2">
-                    Пространства для вас <small>ПОКАЗАТЬ ВСЁ</small>
-                </h2>
-
-                <div className="spaces">
-                    {SPACES.map(sp => (
-                        <div key={sp.name} className="space-item">
-                            <div className="space-icon">{sp.icon}</div>
-                            <strong>{sp.name}</strong>
-                            <small>{sp.members}</small>
+                    {!loading && !error && channels.length > 0 && (
+                        <div className="channels">
+                            {channels.map((ch) => (
+                                <Link
+                                    key={ch.id}
+                                    to={`/app/channels/${ch.id}`}
+                                    className="channel-card"
+                                >
+                                    <div className="channel-card__icon">#</div>
+                                    <div className="channel-card__body">
+                                        <div className="channel-card__name">{ch.name}</div>
+                                        <div className="channel-card__desc">
+                                            {ch.unread > 0 ? `${ch.unread} новых` : ch.desc}
+                                        </div>
+                                    </div>
+                                    {ch.unread > 0 && (
+                                        <span className="channel-card__badge">{ch.unread}</span>
+                                    )}
+                                </Link>
+                            ))}
                         </div>
-                    ))}
-                </div>
+                    )}
 
-                <h2 className="feed-h2">Друзья</h2>
-                <div className="friends">
-                    {FRIENDS.map(f => (
-                        <div key={f.name} className="friend-item">
-                            {f.avatar}<br />
-                            <strong>{f.name}</strong>
-                            <small>{f.status}</small>
+                    <div className="section-head">
+                        <h2 className="section-title">Пространства для вас</h2>
+                        <Link to="/app/spaces" className="section-more">Показать всё</Link>
+                    </div>
+
+                    {!loading && !error && spaces.length === 0 && (
+                        <p className="muted">Пока нет пространств</p>
+                    )}
+
+                    {!loading && !error && spaces.length > 0 && (
+                        <div className="spaces">
+                            {spaces.map((sp) => (
+                                <Link
+                                    key={sp.id}
+                                    to={`/app/spaces/${sp.id}`}
+                                    className="space-card"
+                                >
+                                    <div className="space-card__art">{sp.emoji}</div>
+                                    <div className="space-card__name">{sp.name}</div>
+                                    <div className="space-card__members">
+                                        {sp.members.toLocaleString('ru-RU')} человек
+                                    </div>
+                                </Link>
+                            ))}
                         </div>
-                    ))}
+                    )}
+
+                    <h2 className="section-title" style={{ marginTop: 24 }}>Друзья</h2>
+
+                    {!loading && !error && friends.length === 0 && (
+                        <p className="muted">Список друзей пуст</p>
+                    )}
+
+                    {!loading && !error && friends.length > 0 && (
+                        <div className="friends">
+                            {friends.map((f) => (
+                                <Link
+                                    key={f.id}
+                                    to={`/app/dm/${f.id}`}
+                                    className="friend-card"
+                                >
+                                    <Avatar label={f.avatar} size={56} />
+                                    <div className="friend-card__name">{f.name}</div>
+                                    <div className={`friend-card__status friend-card__status--${f.status}`}>
+                                        {f.status === 'voice' ? 'в голосе' :
+                                            f.status === 'online' ? 'в сети' : 'не в сети'}
+                                    </div>
+                                </Link>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </main>
 
-            {/* RIGHT SIDEBAR */}
-            <aside className="app-right">
-                <div className="right-tabs">
-                    <b>Сейчас</b>
-                    <span>Активность</span>
-                </div>
+            <RightSidebar />
 
-                <div className="right-room">
-                    <div className="right-room__art">● ●<br />● ● ●</div>
-                    <strong>Комната 1</strong>
-                    <small>Go-практика · 4 в голосе</small>
-                </div>
-
-                <h3>Сейчас в комнате</h3>
-                <div className="app-person"><span>🟡</span><span>Алина</span><em>говорит</em></div>
-                <div className="app-person"><span>🟠</span><span>Дима</span></div>
-                <div className="app-person"><span>⚫</span><span>Макс</span><em>без звука</em></div>
-                <div className="app-person"><span>🟡</span><span>Вы</span></div>
-            </aside>
+            <InviteDialog
+                open={inviteOpen}
+                spaceId={spaces[0]?.id}
+                onClose={() => setInviteOpen(false)}
+            />
         </div>
     )
 }

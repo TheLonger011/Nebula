@@ -1,69 +1,56 @@
 import { useState } from 'react'
-import {
-    Link,
-    useNavigate,
-} from 'react-router-dom'
-
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import Logo from '@/components/Logo'
+import PasswordInput from '@/components/PasswordInput'
 import { useAuth } from '@/context/AuthContext'
+import { api } from '@/api'
+import { pendingRegistration } from '@/api/client'
 
 export default function Login() {
-    const navigate = useNavigate()
+    const nav = useNavigate()
+    const location = useLocation()
     const { login } = useAuth()
 
-    const [identifier, setIdentifier] =
-        useState('')
+    const [loginValue, setLoginValue] = useState('')
+    const [password, setPassword] = useState('')
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState('')
 
-    const [password, setPassword] =
-        useState('')
+    const notice = location.state?.notice || ''
+    const from = location.state?.from?.pathname
+    const target = from && from.startsWith('/app') ? from : '/app'
 
-    const [showPassword, setShowPassword] =
-        useState(false)
-
-    const [loading, setLoading] =
-        useState(false)
-
-    const [error, setError] =
-        useState('')
-
-    const onSubmit = async event => {
-        event.preventDefault()
+    const onSubmit = async (e) => {
+        e.preventDefault()
         setError('')
 
-        const value =
-            identifier.trim()
+        const normalized = loginValue.trim().toLowerCase()
 
-        if (!value) {
-            setError(
-                'Введите почту или username'
-            )
-            return
-        }
-
-        if (password.length < 8) {
-            setError(
-                'Пароль должен содержать не менее 8 символов'
-            )
+        if (!normalized || !password) {
+            setError('Заполните все поля')
             return
         }
 
         setLoading(true)
 
         try {
-            await login({
-                email: value,
-                password,
-            })
-
-            navigate('/app', {
-                replace: true,
-            })
+            await login({ login: normalized, password })
+            nav(target, { replace: true })
         } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось выполнить вход'
-            )
+            if (err?.code === 'EMAIL_NOT_VERIFIED' && err.data?.email) {
+                // Почта не подтверждена — отправляем код и ведём на ввод кода.
+                try {
+                    await api.sendCode({ email: err.data.email })
+                    pendingRegistration.set({ email: err.data.email })
+                    nav('/register/verify')
+                    return
+                } catch (sendErr) {
+                    setError(sendErr?.message || 'Не удалось отправить код')
+                    return
+                }
+            }
+
+            setError(err?.message || 'Не удалось выполнить вход')
         } finally {
             setLoading(false)
         }
@@ -73,134 +60,54 @@ export default function Login() {
         <div className="auth-window">
             <div className="auth-content">
 
-                <h1 className="auth-title">
-                    Авторизация
-                </h1>
+                <h1 className="auth-title">Авторизация</h1>
 
-                <form
-                    className="auth-form"
-                    id="loginForm"
-                    onSubmit={onSubmit}
-                    noValidate
-                >
+                <form className="auth-form" id="loginForm" onSubmit={onSubmit}>
                     <div className="field">
-                        <label
-                            className="field-label"
-                            htmlFor="username"
-                        >
+                        <label className="field-label" htmlFor="login-email">
                             почта/username:
                         </label>
 
                         <input
                             className="input"
-                            id="username"
-                            name="username"
+                            id="login-email"
+                            name="login"
                             type="text"
                             autoComplete="username"
-                            value={identifier}
-                            onChange={event =>
-                                setIdentifier(
-                                    event.target.value
-                                )
-                            }
+                            value={loginValue}
+                            onChange={(e) => setLoginValue(e.target.value)}
                             disabled={loading}
-                            required
                         />
                     </div>
 
                     <div className="field">
-                        <label
-                            className="field-label"
-                            htmlFor="password"
-                        >
+                        <label className="field-label" htmlFor="login-password">
                             пароль:
                         </label>
 
-                        <div className="password-wrapper">
-                            <input
-                                className="input"
-                                id="password"
-                                name="password"
-                                type={
-                                    showPassword
-                                        ? 'text'
-                                        : 'password'
-                                }
-                                autoComplete="current-password"
-                                value={password}
-                                onChange={event =>
-                                    setPassword(
-                                        event.target.value
-                                    )
-                                }
-                                disabled={loading}
-                                required
-                            />
+                        <PasswordInput
+                            id="login-password"
+                            name="password"
+                            autoComplete="current-password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            disabled={loading}
+                        />
 
-                            <span
-                                className="password-divider"
-                                aria-hidden="true"
-                            />
-
-                            <button
-                                className="password-toggle"
-                                type="button"
-                                aria-label={
-                                    showPassword
-                                        ? 'Скрыть пароль'
-                                        : 'Показать пароль'
-                                }
-                                aria-pressed={
-                                    showPassword
-                                }
-                                onClick={() =>
-                                    setShowPassword(
-                                        value => !value
-                                    )
-                                }
-                                disabled={loading}
-                            >
-                                <svg
-                                    className="eye-icon"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    aria-hidden="true"
-                                >
-                                    <path
-                                        d="M2.5 12C2.5 12 6 6.5 12 6.5C18 6.5 21.5 12 21.5 12C21.5 12 18 17.5 12 17.5C6 17.5 2.5 12 2.5 12Z"
-                                        stroke="currentColor"
-                                        strokeWidth="1.8"
-                                        strokeLinejoin="round"
-                                    />
-
-                                    <circle
-                                        cx="12"
-                                        cy="12"
-                                        r="2.8"
-                                        stroke="currentColor"
-                                        strokeWidth="1.8"
-                                    />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <Link
-                            to="/recover"
-                            className="forgot-password"
-                        >
+                        <Link to="/recover" className="forgot-password">
                             Забыли пароль?
                         </Link>
                     </div>
-
-                    {error && (
-                        <p
-                            className="auth-error auth-error--login"
-                            role="alert"
-                        >
-                            {error}
-                        </p>
-                    )}
                 </form>
+
+                {(error || notice) && (
+                    <p
+                        className={`auth-form-error ${error ? '' : 'auth-form-notice'}`.trim()}
+                        role={error ? 'alert' : 'status'}
+                    >
+                        {error || notice}
+                    </p>
+                )}
 
                 <div className="auth-bottom">
                     <button
@@ -209,28 +116,20 @@ export default function Login() {
                         className="login-button"
                         disabled={loading}
                     >
-                        {loading
-                            ? 'Вход…'
-                            : 'Вход'}
+                        {loading ? 'Вход…' : 'Вход'}
                     </button>
 
                     <div className="register-text">
-                        Нет учетной записи?{' '}
+                        <span>Нет учетной записи? </span>
 
-                        <Link
-                            to="/register"
-                            className="register-link"
-                        >
+                        <Link to="/register" className="register-link">
                             Зарегистрируйся
                         </Link>
                     </div>
                 </div>
 
-                <Logo
-                    variant="animation"
-                    className="planet-logo"
-                    alt=""
-                />
+                <Logo variant="animation" className="planet-logo" alt="" />
+
             </div>
         </div>
     )

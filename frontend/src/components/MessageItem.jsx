@@ -1,40 +1,68 @@
-import Avatar from './Avatar'
-import { users, currentUser } from '@/mocks/data'
+export default function MessageItem({ message, author }) {
+    const isSelf = message.self || message.authorId === 'me'
+    const name = author?.name || author?.displayName || 'Неизвестный'
+    const avatar = author?.avatar || ''
 
-function findAuthor(id) {
-    if (id === 'me') return currentUser
-    return users.find(u => u.id === id) || { name: 'Unknown', avatar: '?' }
-}
-
-export default function MessageItem({ message }) {
-    const author = findAuthor(message.authorId)
     return (
-        <div className={`message ${message.self ? 'message--self' : ''}`}>
-            <div className="message__avatar">{author.avatar}</div>
+        <div className={`message ${isSelf ? 'message--self' : ''}`}>
+            <div className="message__avatar">
+                {avatar ? (
+                    <img src={avatar} alt="" />
+                ) : (
+                    <span
+                        className="icon-placeholder"
+                        aria-hidden="true"
+                    />
+                )}
+            </div>
+
             <div className="message__body">
                 <div className="message__head">
-                    <span className="message__author">{author.name}</span>
-                    <span className="message__time">{message.time}</span>
+                    <span className="message__author">
+                        {name}
+                    </span>
+
+                    {message.time && (
+                        <span className="message__time">
+                            {message.time}
+                        </span>
+                    )}
                 </div>
 
-                <div className="message__text">{message.text}</div>
+                {message.text && (
+                    <div className="message__text">
+                        {message.text}
+                    </div>
+                )}
 
                 {message.code && (
-                    <pre className="code">{message.code}</pre>
+                    <pre className="code">
+                        {message.code}
+                    </pre>
                 )}
 
                 {message.reactions?.length > 0 && (
                     <div className="reactions">
-                        {message.reactions.map((r, i) => (
-                            <span key={i} className="reaction">{r.emoji} {r.count}</span>
+                        {message.reactions.map((reaction, index) => (
+                            <span
+                                key={reaction.id ?? index}
+                                className="reaction"
+                            >
+                                <span
+                                    className="icon-placeholder"
+                                    aria-hidden="true"
+                                />
+                                {' '}
+                                {reaction.count}
+                            </span>
                         ))}
                     </div>
                 )}
 
                 {message.thread && (
                     <span className="thread-link">
-            {message.thread.replies} ответа в ветке
-          </span>
+                        {message.thread.replies} ответа в ветке
+                    </span>
                 )}
             </div>
         </div>
