@@ -1,6 +1,0 @@
-.idea
-.gitignore
-bin/
-dist/
-*.log
-vendor
