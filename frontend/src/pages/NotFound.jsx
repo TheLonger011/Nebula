@@ -1,6 +1,9 @@
 import { Link } from 'react-router-dom'
+import { useAuth } from '@/context/AuthContext'
 
 export default function NotFound() {
+    const { isAuthenticated } = useAuth()
+
     return (
         <div className="auth-layout">
             <div style={{ textAlign: 'center', color: 'var(--text-primary)' }}>
@@ -8,7 +11,12 @@ export default function NotFound() {
                 <p style={{ color: 'var(--text-secondary)', marginBottom: 16 }}>
                     Страница не найдена
                 </p>
-                <Link to="/login" className="auth-card__link">← Вернуться ко входу</Link>
+                <Link
+                    to={isAuthenticated ? '/app' : '/login'}
+                    className="auth-card__link"
+                >
+                    {isAuthenticated ? '← На главную' : '← Вернуться ко входу'}
+                </Link>
             </div>
         </div>
     )

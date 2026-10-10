@@ -1,18 +1,31 @@
 import { useState } from 'react'
 
-export default function MessageComposer({ placeholder, onSend }) {
+export default function MessageComposer({
+                                            placeholder = 'Написать сообщение',
+                                            onSend,
+                                            disabled = false,
+                                        }) {
     const [text, setText] = useState('')
+    const [sending, setSending] = useState(false)
 
-    const handleSend = () => {
-        const t = text.trim()
-        if (!t) return
-        onSend(t)
-        setText('')
+    const handleSend = async () => {
+        const value = text.trim()
+
+        if (!value || sending || disabled) return
+
+        setSending(true)
+
+        try {
+            await onSend(value)
+            setText('')
+        } finally {
+            setSending(false)
+        }
     }
 
-    const handleKey = (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault()
+    const handleKeyDown = (event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault()
             handleSend()
         }
     }
@@ -20,15 +33,29 @@ export default function MessageComposer({ placeholder, onSend }) {
     return (
         <div className="chat__composer">
             <div className="chat__composer-inner">
-                <input
+                <textarea
                     className="chat__composer-input"
                     placeholder={placeholder}
                     value={text}
-                    onChange={e => setText(e.target.value)}
-                    onKeyDown={handleKey}
+                    disabled={disabled || sending}
+                    onChange={(event) => setText(event.target.value)}
+                    onKeyDown={handleKeyDown}
+                    rows={1}
+                    aria-label={placeholder}
                 />
-                <button className="chat__composer-send" onClick={handleSend} title="Отправить">
-                    <span className="icon-stub">(→)</span>
+
+                <button
+                    type="button"
+                    className="chat__composer-send"
+                    onClick={handleSend}
+                    disabled={disabled || sending || !text.trim()}
+                    title="Отправить"
+                    aria-label="Отправить сообщение"
+                >
+                    <span
+                        className="icon-placeholder"
+                        aria-hidden="true"
+                    />
                 </button>
             </div>
         </div>

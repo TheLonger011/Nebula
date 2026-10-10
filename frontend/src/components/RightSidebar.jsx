@@ -1,55 +1,161 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { api } from '@/api'
 import Avatar from './Avatar'
-import { users } from '@/mocks/data'
+import EmptyState from './EmptyState'
 
-export default function RightSidebar() {
-    const [tab, setTab] = useState('now')
+export default function RightSidebar({ roomId }) {
+    const [tab, setTab] = useState('participants')
+    const [room, setRoom] = useState(null)
+    const [participants, setParticipants] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState('')
 
-    const room = [
-        { id: 'u1', name: 'Алина', avatar: 'Ал', state: 'speaking' },
-        { id: 'u2', name: 'Дима',  avatar: 'Дм', state: 'idle' },
-        { id: 'u5', name: 'Макс',  avatar: 'Мк', state: 'muted' },
-        { id: 'me', name: 'Вы',    avatar: 'Вы', state: 'idle' },
-    ]
+    useEffect(() => {
+        let active = true
+
+        async function loadRoom() {
+            setLoading(true)
+            setError('')
+
+            try {
+                const rooms = await api.getVoiceRooms()
+                if (!active) return
+
+                const selected = roomId
+                    ? rooms.find((item) => String(item.id) === String(roomId))
+                    : null
+
+                setRoom(selected || null)
+                setParticipants(selected?.participants || [])
+            } catch (err) {
+                if (active) {
+                    setRoom(null)
+                    setParticipants([])
+                    setError(err?.message || 'Не удалось загрузить участников')
+                }
+            } finally {
+                if (active) setLoading(false)
+            }
+        }
+
+        loadRoom()
+
+        return () => {
+            active = false
+        }
+    }, [roomId])
 
     return (
         <aside className="rightbar">
-            <div className="rightbar__tabs">
+            <div className="rightbar__tabs" role="tablist">
                 <button
-                    className={`rightbar__tab ${tab === 'now' ? 'rightbar__tab--active' : ''}`}
-                    onClick={() => setTab('now')}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === 'participants'}
+                    className={`rightbar__tab ${
+                        tab === 'participants' ? 'rightbar__tab--active' : ''
+                    }`}
+                    onClick={() => setTab('participants')}
                 >
-                    Сейчас
+                    Участники
                 </button>
+
                 <button
-                    className={`rightbar__tab ${tab === 'activity' ? 'rightbar__tab--active' : ''}`}
-                    onClick={() => setTab('activity')}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === 'threads'}
+                    className={`rightbar__tab ${
+                        tab === 'threads' ? 'rightbar__tab--active' : ''
+                    }`}
+                    onClick={() => setTab('threads')}
                 >
-                    Активность
+                    Ветки
+                </button>
+
+                <button
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === 'files'}
+                    className={`rightbar__tab ${
+                        tab === 'files' ? 'rightbar__tab--active' : ''
+                    }`}
+                    onClick={() => setTab('files')}
+                >
+                    Файлы
                 </button>
             </div>
 
-            <div className="voice-card">
-                <div className="voice-card__art">voice</div>
-                <div className="voice-card__info">
-                    <div className="voice-card__name">Комната 1</div>
-                    <div className="voice-card__sub">Go-практика · 4 в голосе</div>
+            {loading && <p className="muted">Загрузка…</p>}
+
+            {!loading && error && (
+                <div className="rightbar__content">
+                    <p className="auth-inline-error">{error}</p>
                 </div>
-            </div>
+            )}
 
-            <div className="rightbar__section-title">Сейчас в комнате</div>
-            <ul>
-                {room.map(u => (
-                    <li key={u.id} className="rightbar__user">
-                        <Avatar label={u.avatar} size={36} />
-                        <span className="rightbar__user-name">{u.name}</span>
-                        <span className={`rightbar__user-state rightbar__user-state--${u.state}`}>
-              {u.state === 'speaking' ? 'говорит' :
-                  u.state === 'muted' ? 'без звука' : ''}
-            </span>
-                    </li>
-                ))}
-            </ul>
+            {!loading && !error && tab === 'participants' && (
+                <div className="rightbar__content">
+                    {room && (
+                        <div className="rightbar__section-title">
+                            В голосе — {participants.length}
+                        </div>
+                    )}
+
+                    {!room && (
+                        <EmptyState
+                            title="Нет активной комнаты"
+                            description="Участники голосовых комнат появятся здесь после подключения."
+                        />
+                    )}
+
+                    {room && participants.length === 0 && (
+                        <EmptyState
+                            title="Пока никого нет"
+                            description="Когда участники подключатся к комнате, они появятся здесь."
+                        />
+                    )}
+
+                    {room && participants.length > 0 && (
+                        <ul className="rightbar__users">
+                            {participants.map((participant) => {
+                                const user = typeof participant === 'object'
+                                    ? participant
+                                    : { id: participant, name: '' }
+
+                                return (
+                                    <li
+                                        className="rightbar__user"
+                                        key={user.id}
+                                    >
+                                        <Avatar
+                                            src={user.avatarUrl || user.avatar}
+                                            label={user.name}
+                                            size={36}
+                                        />
+                                        <span className="rightbar__user-name">
+                                            {user.displayName || user.name || 'Пользователь'}
+                                        </span>
+                                    </li>
+                                )
+                            })}
+                        </ul>
+                    )}
+                </div>
+            )}
+
+            {!loading && !error && tab === 'threads' && (
+                <EmptyState
+                    title="Веток пока нет"
+                    description="Ответы на сообщения будут отображаться здесь."
+                />
+            )}
+
+            {!loading && !error && tab === 'files' && (
+                <EmptyState
+                    title="Файлов пока нет"
+                    description="Прикреплённые к сообщениям файлы появятся здесь."
+                />
+            )}
         </aside>
     )
 }

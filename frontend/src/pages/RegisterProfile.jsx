@@ -1,91 +1,68 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
+import PasswordInput from '@/components/PasswordInput'
+import Progress from '@/components/Progress'
 import { useAuth } from '@/context/AuthContext'
+import { pendingRegistration } from '@/api/client'
+import {
+    PASSWORD_MIN,
+    STRENGTH_STEPS,
+    isUsername,
+    maskEmail,
+    parseBirthDate,
+    strengthLabel,
+} from '@/utils/auth'
 
-const maskEmail = (email) => {
-    if (!email) {
-        return 'почту, указанную при регистрации'
-    }
-
-    const atIndex = email.indexOf('@')
-
-    if (atIndex <= 0) {
-        return email
-    }
-
-    const local = email.slice(0, atIndex)
-    const domain = email.slice(atIndex + 1)
-
-    if (!domain) {
-        return email
-    }
-
-    return `${local.slice(0, 1)}***@${domain}`
+const EMPTY_FORM = {
+    username: '',
+    displayName: '',
+    password: '',
+    confirm: '',
+    day: '',
+    month: '',
+    year: '',
 }
 
-export default function RegisterProfile() {
+function ProfileForm({ email, ticket }) {
     const nav = useNavigate()
     const { register } = useAuth()
 
-    const email =
-        sessionStorage.getItem('nebula_verified_email') ||
-        sessionStorage.getItem('nebula_pending_email') || ''
-
-    const [form, setForm] = useState({
-        username: '',
-        displayName: '',
-        password: '',
-        confirm: '',
-        day: '',
-        month: '',
-        year: '',
-    })
-
-    const [showPassword, setShowPassword] = useState(false)
-    const [showConfirm, setShowConfirm] = useState(false)
+    const [form, setForm] = useState(EMPTY_FORM)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
 
     const updateField = (field) => (e) => {
-        setForm((current) => ({
-            ...current,
-            [field]: e.target.value,
-        }))
-
+        setForm((current) => ({ ...current, [field]: e.target.value }))
         setError('')
     }
 
     const passwordMismatch =
-        form.confirm.length > 0 &&
-        form.password !== form.confirm
+        form.confirm.length > 0 && form.password !== form.confirm
 
     const onSubmit = async (e) => {
         e.preventDefault()
-
         setError('')
 
         const username = form.username.trim()
-        const displayName = form.displayName.trim() || username
+        const displayName = form.displayName.trim()
 
-        if (!username || !form.password || !form.confirm || !form.day || !form.month || !form.year) {
-            setError('Заполните обязательные поля, включая дату рождения')
+        if (!username || !form.password || !form.confirm) {
+            setError('Заполните все обязательные поля')
             return
         }
 
-        if (!/^[A-Za-z0-9_]{3,16}$/.test(username)) {
-            setError('Username: 3-16 символов, только латиница, цифры и _')
+        if (!isUsername(username)) {
+            setError('Username: 3–16 символов, латиница, цифры и _')
             return
         }
 
         if (displayName.length > 64) {
-            setError('Отображаемое имя должно содержать не более 64 символов')
+            setError('Отображаемое имя: не более 64 символов')
             return
         }
 
-        if (form.password.length < 8) {
-            setError(
-                'Пароль должен содержать минимум 8 символов'
-            )
+        if (form.password.length < PASSWORD_MIN) {
+            setError(`Пароль должен содержать минимум ${PASSWORD_MIN} символов`)
             return
         }
 
@@ -94,29 +71,29 @@ export default function RegisterProfile() {
             return
         }
 
+        const birth = parseBirthDate(form)
+        if (birth.error) {
+            setError(birth.error)
+            return
+        }
+
         setLoading(true)
 
         try {
             await register({
-                ...form,
-                username,
-                displayName,
                 email,
+                ticket,
+                username,
+                // По ТЗ отображаемое имя необязательно и по умолчанию = username.
+                displayName: displayName || username,
+                password: form.password,
+                ...(birth.value ? { birthDate: birth.value } : {}),
             })
 
-            sessionStorage.removeItem(
-                'nebula_pending_email'
-            )
-            sessionStorage.removeItem(
-                'nebula_verified_email'
-            )
-
-            nav('/app')
+            pendingRegistration.clear()
+            nav('/app', { replace: true })
         } catch (err) {
-            setError(
-                err?.message ||
-                'Не удалось создать аккаунт'
-            )
+            setError(err?.message || 'Не удалось создать аккаунт')
         } finally {
             setLoading(false)
         }
@@ -125,33 +102,22 @@ export default function RegisterProfile() {
     return (
         <section className="auth-card auth-card--profile">
 
-            <div className="progress">
-                <span className="progress__seg progress__seg--active" />
-                <span className="progress__seg progress__seg--active" />
-                <span className="progress__seg progress__seg--active" />
-            </div>
+            <Progress step={3} />
 
-            <h1 className="profile-title">
-                Расскажите о себе
-            </h1>
+            <h1 className="profile-title">Расскажите о себе</h1>
 
             <p className="profile-sub">
                 Почта{' '}
-                <strong className="auth-email">
-                    {maskEmail(email)}
-                </strong>{' '}
+                <strong className="auth-email">{maskEmail(email)}</strong>{' '}
                 подтверждена. Осталось заполнить профиль.
             </p>
 
-            <form onSubmit={onSubmit}>
+            <form onSubmit={onSubmit} noValidate>
 
                 <div className="profile-grid">
 
                     <div>
-                        <label
-                            className="auth-label"
-                            htmlFor="username"
-                        >
+                        <label className="auth-label" htmlFor="username">
                             username:
                         </label>
 
@@ -162,6 +128,7 @@ export default function RegisterProfile() {
                             autoComplete="username"
                             value={form.username}
                             onChange={updateField('username')}
+                            disabled={loading}
                         />
 
                         <small className="auth-hint">
@@ -170,10 +137,7 @@ export default function RegisterProfile() {
                     </div>
 
                     <div>
-                        <label
-                            className="auth-label"
-                            htmlFor="display-name"
-                        >
+                        <label className="auth-label" htmlFor="display-name">
                             отображаемое имя:
                         </label>
 
@@ -182,183 +146,62 @@ export default function RegisterProfile() {
                             className="auth-input"
                             type="text"
                             autoComplete="name"
+                            maxLength={64}
                             value={form.displayName}
                             onChange={updateField('displayName')}
+                            disabled={loading}
                         />
 
-                        <small className="auth-hint">
-                            1-64 символа
-                        </small>
+                        <small className="auth-hint">1-64 символа</small>
                     </div>
 
                     <div>
-                        <label
-                            className="auth-label"
-                            htmlFor="profile-password"
-                        >
+                        <label className="auth-label" htmlFor="profile-password">
                             пароль:
                         </label>
 
-                        <div className="pass-wrap">
-
-                            <input
-                                id="profile-password"
-                                className="auth-input"
-                                type={
-                                    showPassword
-                                        ? 'text'
-                                        : 'password'
-                                }
-                                autoComplete="new-password"
-                                value={form.password}
-                                onChange={updateField('password')}
-                            />
-
-                            <button
-                                type="button"
-                                className="pass-eye"
-                                aria-label={
-                                    showPassword
-                                        ? 'Скрыть пароль'
-                                        : 'Показать пароль'
-                                }
-                                onClick={() =>
-                                    setShowPassword(
-                                        (value) => !value
-                                    )
-                                }
-                            >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    aria-hidden="true"
-                                >
-                                    <path
-                                        d="M2.5 12C2.5 12 6 6.5 12 6.5C18 6.5 21.5 12 21.5 12C21.5 12 18 17.5 12 17.5C6 17.5 2.5 12 2.5 12Z"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="1.8"
-                                    />
-
-                                    <circle
-                                        cx="12"
-                                        cy="12"
-                                        r="2.8"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="1.8"
-                                    />
-                                </svg>
-                            </button>
-
-                        </div>
+                        <PasswordInput
+                            variant="profile"
+                            id="profile-password"
+                            autoComplete="new-password"
+                            value={form.password}
+                            onChange={updateField('password')}
+                            disabled={loading}
+                        />
 
                         <small className="auth-hint">
-                            От 8 символов.
-                            Надёжность:{' '}
-                            {form.password.length >= 8
-                                ? 'хорошая'
-                                : 'не указана'}
+                            От {PASSWORD_MIN} символов. Надёжность:{' '}
+                            {strengthLabel(form.password)}
                         </small>
 
                         <div className="strength">
-                            <i
-                                className={`strength__seg ${
-                                    form.password.length >= 1
-                                        ? 'strength__seg--active'
-                                        : ''
-                                }`}
-                            />
-
-                            <i
-                                className={`strength__seg ${
-                                    form.password.length >= 4
-                                        ? 'strength__seg--active'
-                                        : ''
-                                }`}
-                            />
-
-                            <i
-                                className={`strength__seg ${
-                                    form.password.length >= 8
-                                        ? 'strength__seg--active'
-                                        : ''
-                                }`}
-                            />
-
-                            <i
-                                className={`strength__seg ${
-                                    form.password.length >= 12
-                                        ? 'strength__seg--active'
-                                        : ''
-                                }`}
-                            />
+                            {STRENGTH_STEPS.map((min) => (
+                                <i
+                                    key={min}
+                                    className={`strength__seg ${
+                                        form.password.length >= min
+                                            ? 'strength__seg--active'
+                                            : ''
+                                    }`.trim()}
+                                />
+                            ))}
                         </div>
                     </div>
 
                     <div>
-                        <label
-                            className="auth-label"
-                            htmlFor="confirm-password"
-                        >
+                        <label className="auth-label" htmlFor="confirm-password">
                             подтвердите пароль:
                         </label>
 
-                        <div
-                            className={`pass-wrap ${
-                                passwordMismatch
-                                    ? 'pass-wrap--error'
-                                    : ''
-                            }`}
-                        >
-                            <input
-                                id="confirm-password"
-                                className="auth-input"
-                                type={
-                                    showConfirm
-                                        ? 'text'
-                                        : 'password'
-                                }
-                                autoComplete="new-password"
-                                value={form.confirm}
-                                onChange={updateField('confirm')}
-                            />
-
-                            <button
-                                type="button"
-                                className="pass-eye"
-                                aria-label={
-                                    showConfirm
-                                        ? 'Скрыть пароль'
-                                        : 'Показать пароль'
-                                }
-                                onClick={() =>
-                                    setShowConfirm(
-                                        (value) => !value
-                                    )
-                                }
-                            >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    aria-hidden="true"
-                                >
-                                    <path
-                                        d="M2.5 12C2.5 12 6 6.5 12 6.5C18 6.5 21.5 12 21.5 12C21.5 12 18 17.5 12 17.5C6 17.5 2.5 12 2.5 12Z"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="1.8"
-                                    />
-
-                                    <circle
-                                        cx="12"
-                                        cy="12"
-                                        r="2.8"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="1.8"
-                                    />
-                                </svg>
-                            </button>
-                        </div>
+                        <PasswordInput
+                            variant="profile"
+                            id="confirm-password"
+                            invalid={passwordMismatch}
+                            autoComplete="new-password"
+                            value={form.confirm}
+                            onChange={updateField('confirm')}
+                            disabled={loading}
+                        />
 
                         <small
                             className={
@@ -389,26 +232,33 @@ export default function RegisterProfile() {
                         className="auth-input"
                         type="text"
                         inputMode="numeric"
+                        maxLength={2}
                         placeholder="день"
                         value={form.day}
                         onChange={updateField('day')}
+                        disabled={loading}
                     />
 
                     <input
                         className="auth-input"
                         type="text"
+                        aria-label="месяц рождения"
                         placeholder="месяц"
                         value={form.month}
                         onChange={updateField('month')}
+                        disabled={loading}
                     />
 
                     <input
                         className="auth-input"
                         type="text"
                         inputMode="numeric"
+                        aria-label="год рождения"
+                        maxLength={4}
                         placeholder="год"
                         value={form.year}
                         onChange={updateField('year')}
+                        disabled={loading}
                     />
 
                 </div>
@@ -425,35 +275,30 @@ export default function RegisterProfile() {
                 <button
                     className="auth-btn auth-btn--lg"
                     type="submit"
-                    disabled={
-                        loading ||
-                        passwordMismatch
-                    }
+                    disabled={loading || passwordMismatch}
                 >
-                    {loading
-                        ? 'Создание аккаунта…'
-                        : 'Зарегистрироваться'}
+                    {loading ? 'Создание аккаунта…' : 'Зарегистрироваться'}
                 </button>
 
                 <div className="profile-foot">
-
-                    <div
-                        className="progress"
-                        style={{ margin: 0 }}
-                    >
-                        <span className="progress__seg progress__seg--active" />
-                        <span className="progress__seg progress__seg--active" />
-                        <span className="progress__seg progress__seg--active" />
-                    </div>
+                    <Progress step={3} style={{ margin: 0 }} />
 
                     <span className="muted">
                         После регистрации откроется главная
                     </span>
-
                 </div>
 
             </form>
 
         </section>
     )
+}
+
+export default function RegisterProfile() {
+    const pending = pendingRegistration.get()
+
+    if (!pending?.email) return <Navigate to="/register" replace />
+    if (!pending.ticket) return <Navigate to="/register/verify" replace />
+
+    return <ProfileForm email={pending.email} ticket={pending.ticket} />
 }

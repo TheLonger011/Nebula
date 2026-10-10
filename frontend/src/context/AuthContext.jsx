@@ -1,152 +1,83 @@
 import {
     createContext,
+    useCallback,
     useContext,
     useEffect,
     useMemo,
     useState,
 } from 'react'
-
-import { api } from '@/api/client'
+import { api } from '@/api'
+import { session, UNAUTHORIZED_EVENT } from '@/api/client'
 
 const AuthCtx = createContext(null)
 
-function readStoredUser() {
-    const token =
-        localStorage.getItem('nebula_token')
-
-    const rawUser =
-        localStorage.getItem('nebula_user')
-
-    if (!token || !rawUser) {
-        return null
-    }
-
-    try {
-        return JSON.parse(rawUser)
-    } catch {
-        localStorage.removeItem('nebula_token')
-        localStorage.removeItem('nebula_user')
-
-        return null
-    }
-}
+// Сессия восстанавливается синхронно при первом рендере, поэтому
+// RequireAuth не успевает ошибочно отправить авторизованного на /login.
+const restoreUser = () => (session.getToken() ? session.getUser() : null)
 
 export function AuthProvider({ children }) {
-    const [user, setUser] = useState(null)
-    const [ready, setReady] = useState(false)
+    const [user, setUser] = useState(restoreUser)
 
-    useEffect(() => {
-        setUser(readStoredUser())
-        setReady(true)
+    const logout = useCallback(() => {
+        session.clear()
+        setUser(null)
     }, [])
 
-    const login = async credentials => {
-        const response =
-            await api.login(credentials)
+    const startSession = useCallback((payload) => {
+        const { user: nextUser, token } = payload || {}
 
-        const {
-            user: nextUser,
-            token,
-        } = response || {}
-
-        if (!token || !nextUser) {
-            throw new Error(
-                'Сервер вернул некорректный ответ авторизации'
-            )
+        if (!nextUser || !token) {
+            throw new Error('Сервер вернул некорректный ответ')
         }
 
-        localStorage.setItem(
-            'nebula_token',
-            token
-        )
-
-        localStorage.setItem(
-            'nebula_user',
-            JSON.stringify(nextUser)
-        )
-
+        session.save(token, nextUser)
         setUser(nextUser)
-
         return nextUser
-    }
+    }, [])
 
-    const register = async payload => {
-        const response =
-            await api.completeProfile(payload)
-
-        const {
-            user: nextUser,
-            token,
-        } = response || {}
-
-        if (!token || !nextUser) {
-            throw new Error(
-                'Сервер вернул некорректный ответ регистрации'
-            )
+    // Токен протух (401) или выход выполнен в другой вкладке.
+    useEffect(() => {
+        const onStorage = (e) => {
+            if (e.key === null || e.key === 'nebula_token') {
+                setUser(restoreUser())
+            }
         }
 
-        localStorage.setItem(
-            'nebula_token',
-            token
-        )
+        window.addEventListener(UNAUTHORIZED_EVENT, logout)
+        window.addEventListener('storage', onStorage)
 
-        localStorage.setItem(
-            'nebula_user',
-            JSON.stringify(nextUser)
-        )
+        return () => {
+            window.removeEventListener(UNAUTHORIZED_EVENT, logout)
+            window.removeEventListener('storage', onStorage)
+        }
+    }, [logout])
 
-        setUser(nextUser)
+    const login = useCallback(
+        async (credentials) => startSession(await api.login(credentials)),
+        [startSession]
+    )
 
-        return nextUser
-    }
-
-    const logout = () => {
-        localStorage.removeItem(
-            'nebula_token'
-        )
-
-        localStorage.removeItem(
-            'nebula_user'
-        )
-
-        setUser(null)
-    }
+    const register = useCallback(
+        async (payload) => startSession(await api.completeProfile(payload)),
+        [startSession]
+    )
 
     const value = useMemo(
         () => ({
             user,
-            ready,
-
-            isAuthenticated:
-                Boolean(
-                    user &&
-                    localStorage.getItem(
-                        'nebula_token'
-                    )
-                ),
-
+            isAuthenticated: Boolean(user),
             login,
             register,
             logout,
         }),
-        [user, ready]
+        [user, login, register, logout]
     )
 
-    return (
-        <AuthCtx.Provider value={value}>
-            {children}
-        </AuthCtx.Provider>
-    )
+    return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>
 }
 
 export function useAuth() {
-    const context = useContext(AuthCtx)
-
-    if (!context) {
-        throw new Error(
-            'useAuth must be used inside AuthProvider'
-        )
-    }
-
-    return context
+    const ctx = useContext(AuthCtx)
+    if (!ctx) throw new Error('useAuth должен вызываться внутри <AuthProvider>')
+    return ctx
 }

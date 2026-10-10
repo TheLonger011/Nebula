@@ -80,7 +80,7 @@ func (s *Server) verifyCode(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ticket": "verified"})
 }
 
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {

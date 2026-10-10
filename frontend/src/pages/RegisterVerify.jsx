@@ -1,387 +1,157 @@
-import {
-    useEffect,
-    useRef,
-    useState,
-} from 'react'
+import { useEffect, useState } from 'react'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
+import OtpInput from '@/components/OtpInput'
+import Progress from '@/components/Progress'
+import { api } from '@/api'
+import { pendingRegistration } from '@/api/client'
+import { CODE_LENGTH, RESEND_SECONDS, maskEmail } from '@/utils/auth'
 
-import {
-    Link,
-    useNavigate,
-} from 'react-router-dom'
+function VerifyForm({ email }) {
+    const nav = useNavigate()
 
-import { api } from '@/api/client'
-
-function maskEmail(email) {
-    if (
-        !email ||
-        !email.includes('@')
-    ) {
-        return 'вашу почту'
-    }
-
-    const [name, domain] =
-        email.split('@')
-
-    const visible =
-        name.slice(
-            0,
-            Math.min(2, name.length)
-        )
-
-    return (
-        `${visible}` +
-        `${'*'.repeat(
-            Math.max(
-                1,
-                name.length -
-                visible.length
-            )
-        )}` +
-        `@${domain}`
-    )
-}
-
-export default function RegisterVerify() {
-    const navigate = useNavigate()
-
-    const inputRefs =
-        useRef([])
-
-    const [code, setCode] =
-        useState(
-            Array(6).fill('')
-        )
-
-    const [email] = useState(
-        () =>
-            sessionStorage.getItem(
-                'nebula_pending_email'
-            ) || ''
-    )
-
-    const [seconds, setSeconds] =
-        useState(60)
-
-    const [loading, setLoading] =
-        useState(false)
-
-    const [resending, setResending] =
-        useState(false)
-
-    const [error, setError] =
-        useState('')
+    const [code, setCode] = useState('')
+    const [error, setError] = useState('')
+    const [attemptsLeft, setAttemptsLeft] = useState(null)
+    const [loading, setLoading] = useState(false)
+    const [resending, setResending] = useState(false)
+    const [cooldown, setCooldown] = useState(RESEND_SECONDS)
 
     useEffect(() => {
-        if (seconds <= 0) {
-            return undefined
-        }
+        if (cooldown <= 0) return undefined
 
-        const timer =
-            window.setInterval(() => {
-                setSeconds(value =>
-                    Math.max(
-                        0,
-                        value - 1
-                    )
-                )
-            }, 1000)
+        const id = setTimeout(() => setCooldown((c) => c - 1), 1000)
+        return () => clearTimeout(id)
+    }, [cooldown])
 
-        return () =>
-            window.clearInterval(timer)
-    }, [seconds])
+    const busy = loading || resending
 
-    useEffect(() => {
-        if (!email) {
-            navigate(
-                '/register',
-                { replace: true }
-            )
-        }
-    }, [email, navigate])
-
-    const updateCode = (
-        index,
-        value
-    ) => {
-        const digit =
-            value
-                .replace(/\D/g, '')
-                .slice(-1)
-
-        setCode(current => {
-            const next = [
-                ...current,
-            ]
-
-            next[index] = digit
-
-            return next
-        })
-
-        if (
-            digit &&
-            index < 5
-        ) {
-            inputRefs.current[
-            index + 1
-                ]?.focus()
-        }
-    }
-
-    const handleKeyDown = (
-        index,
-        event
-    ) => {
-        if (
-            event.key ===
-            'Backspace' &&
-            !code[index] &&
-            index > 0
-        ) {
-            inputRefs.current[
-            index - 1
-                ]?.focus()
-        }
-    }
-
-    const handlePaste = event => {
-        event.preventDefault()
-
-        const pasted =
-            event.clipboardData
-                .getData('text')
-                .replace(/\D/g, '')
-                .slice(0, 6)
-
-        const next =
-            Array(6).fill('')
-
-        pasted
-            .split('')
-            .forEach(
-                (digit, index) => {
-                    next[index] =
-                        digit
-                }
-            )
-
-        setCode(next)
-
-        inputRefs.current[
-            Math.min(
-                pasted.length,
-                5
-            )
-            ]?.focus()
-    }
-
-    const onSubmit = async event => {
-        event.preventDefault()
+    const onSubmit = async (e) => {
+        e.preventDefault()
         setError('')
 
-        const value =
-            code.join('')
-
-        if (!/^\d{6}$/.test(value)) {
-            setError(
-                'Введите код из 6 цифр'
-            )
+        if (code.length !== CODE_LENGTH) {
+            setError(`Введите ${CODE_LENGTH}-значный код`)
             return
         }
 
         setLoading(true)
 
         try {
-            await api.verifyCode({
-                email,
-                code: value,
-            })
+            const res = await api.verifyCode({ email, code })
 
-            sessionStorage.setItem(
-                'nebula_verified_email',
-                email
-            )
+            if (!res?.ticket) {
+                throw new Error('Сервер вернул некорректный ответ')
+            }
 
-            navigate(
-                '/register/profile'
-            )
+            pendingRegistration.set({ email, ticket: res.ticket })
+            nav('/register/profile')
         } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось подтвердить почту'
-            )
+            setError(err?.message || 'Не удалось проверить код')
+
+            if (typeof err?.data?.attemptsLeft === 'number') {
+                setAttemptsLeft(err.data.attemptsLeft)
+            }
+
+            setCode('')
         } finally {
             setLoading(false)
         }
     }
 
-    const resend = async () => {
-        if (
-            seconds > 0 ||
-            resending
-        ) {
-            return
-        }
-
+    const onResend = async () => {
         setError('')
         setResending(true)
 
         try {
-            await api.sendCode({
-                email,
-            })
-
-            setSeconds(60)
-            setCode(
-                Array(6).fill('')
-            )
-
-            inputRefs.current[0]?.focus()
+            await api.sendCode({ email })
+            setCode('')
+            setAttemptsLeft(null)
+            setCooldown(RESEND_SECONDS)
         } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось отправить код повторно'
-            )
+            setError(err?.message || 'Не удалось отправить код')
         } finally {
             setResending(false)
         }
     }
 
+    const onChangeEmail = () => pendingRegistration.clear()
+
+    const mm = Math.floor(cooldown / 60)
+    const ss = String(cooldown % 60).padStart(2, '0')
+
     return (
         <section className="auth-card auth-card--otp">
-            <div
-                className="progress"
-                aria-label="Шаг 2 из 3"
-            >
-                <span className="progress__seg progress__seg--active" />
-                <span className="progress__seg progress__seg--active" />
-                <span className="progress__seg" />
-            </div>
 
-            <h1 className="auth-card__title-otp">
-                Подтвердите почту
-            </h1>
+            <Progress step={2} />
+
+            <h1 className="auth-card__title-otp">Подтвердите почту</h1>
 
             <p className="auth-card__lead auth-card__lead--otp">
-                Код отправлен на {maskEmail(email)}.
-                Он
-                <br />
-                действует 10 минут.
+                Код отправлен на {maskEmail(email)}. Он действует 10 минут.
             </p>
 
-            <form
-                onSubmit={onSubmit}
-                noValidate
-            >
-                <div
-                    className="codes"
-                    role="group"
-                    aria-label="Код подтверждения"
-                >
-                    {code.map(
-                        (
-                            value,
-                            index
-                        ) => (
-                            <input
-                                key={index}
-                                ref={element => {
-                                    inputRefs.current[
-                                        index
-                                        ] = element
-                                }}
-                                value={value}
-                                type="text"
-                                inputMode="numeric"
-                                autoComplete={
-                                    index === 0
-                                        ? 'one-time-code'
-                                        : 'off'
-                                }
-                                maxLength={1}
-                                aria-label={`Цифра ${
-                                    index + 1
-                                }`}
-                                onChange={event =>
-                                    updateCode(
-                                        index,
-                                        event.target
-                                            .value
-                                    )
-                                }
-                                onKeyDown={event =>
-                                    handleKeyDown(
-                                        index,
-                                        event
-                                    )
-                                }
-                                onPaste={
-                                    handlePaste
-                                }
-                                disabled={
-                                    loading
-                                }
-                            />
-                        )
-                    )}
-                </div>
+            <form onSubmit={onSubmit}>
 
-                <p className="attempts">
-                    Осталось попыток: 5
-                </p>
-
-                <button
-                    type="button"
-                    className="resend-button"
-                    onClick={resend}
-                    disabled={
-                        seconds > 0 ||
-                        resending ||
-                        loading
-                    }
-                >
-                    Отправить снова через{' '}
-                    <span className="orange">
-                        0:
-                        {String(
-                            seconds
-                        ).padStart(
-                            2,
-                            '0'
-                        )}
-                    </span>
-                </button>
+                <OtpInput
+                    length={CODE_LENGTH}
+                    value={code}
+                    onChange={setCode}
+                    disabled={busy}
+                />
 
                 {error && (
-                    <p
-                        className="auth-error"
-                        role="alert"
-                    >
+                    <p className="auth-inline-error" role="alert">
                         {error}
                     </p>
                 )}
 
+                {attemptsLeft !== null && (
+                    <p className="auth-meta">Осталось попыток: {attemptsLeft}</p>
+                )}
+
+                <p className="auth-meta">
+                    {cooldown > 0 ? (
+                        <>
+                            Отправить снова через{' '}
+                            <span className="orange">{mm}:{ss}</span>
+                        </>
+                    ) : (
+                        <button
+                            type="button"
+                            className="auth-link-btn"
+                            onClick={onResend}
+                            disabled={busy}
+                        >
+                            {resending ? 'Отправка…' : 'Отправить код снова'}
+                        </button>
+                    )}
+                </p>
+
                 <button
-                    className="auth-btn auth-btn--lg"
+                    className="auth-btn"
                     type="submit"
-                    disabled={loading}
+                    disabled={busy || code.length !== CODE_LENGTH}
                 >
-                    {loading
-                        ? 'Проверка…'
-                        : 'Подтвердить'}
+                    {loading ? 'Проверка…' : 'Подтвердить'}
                 </button>
+
             </form>
 
-            <div className="change">
-                <Link
-                    to="/register"
-                    className="orange"
-                >
+            <div className="auth-bottom auth-bottom--center">
+                <Link to="/register" className="orange" onClick={onChangeEmail}>
                     Изменить почту
                 </Link>
             </div>
+
         </section>
     )
+}
+
+export default function RegisterVerify() {
+    const pending = pendingRegistration.get()
+
+    if (!pending?.email) return <Navigate to="/register" replace />
+    if (pending.ticket) return <Navigate to="/register/profile" replace />
+
+    return <VerifyForm email={pending.email} />
 }

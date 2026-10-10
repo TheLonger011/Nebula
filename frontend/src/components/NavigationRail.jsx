@@ -1,13 +1,25 @@
 import { NavLink } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import Logo from './Logo'
+import { api } from '@/api'
 
-const SPACES = [
-    { id: 'go',  label: 'Go' },
-    { id: 'kr',  label: 'Кр' },
-    { id: 'de',  label: 'De' },
-]
+export default function NavigationRail({ activeSpaceId }) {
+    const [spaces, setSpaces] = useState([])
 
-export default function NavigationRail() {
+    useEffect(() => {
+        let alive = true
+
+        api.getSpaces()
+            .then((result) => {
+                if (alive) setSpaces(result)
+            })
+            .catch(() => {})
+
+        return () => {
+            alive = false
+        }
+    }, [])
+
     return (
         <aside className="rail">
             <div className="rail__logo">
@@ -17,23 +29,44 @@ export default function NavigationRail() {
             <NavLink
                 to="/app"
                 end
-                className={({ isActive }) => `rail__btn ${isActive ? 'rail__btn--active' : ''}`}
+                className={({ isActive }) =>
+                    `rail__btn ${
+                        isActive && !activeSpaceId ? 'rail__btn--active' : ''
+                    }`
+                }
                 title="Главная"
+                aria-label="Главная"
             >
-                <span className="icon-stub">(дом)</span>
+                <span className="icon-placeholder" aria-hidden="true" />
             </NavLink>
 
             <div className="rail__divider" />
 
-            {SPACES.map(s => (
-                <button key={s.id} className="rail__btn" title={s.label}>
-                    {s.label}
-                </button>
+            {spaces.map((space) => (
+                <NavLink
+                    key={space.id}
+                    to={`/app/spaces/${space.id}`}
+                    className={({ isActive }) =>
+                        `rail__btn ${isActive ? 'rail__btn--active' : ''}`
+                    }
+                    title={space.name}
+                    aria-label={space.name}
+                >
+                    <span
+                        className="space-icon-placeholder"
+                        aria-hidden="true"
+                    />
+                </NavLink>
             ))}
 
-            <button className="rail__btn rail__add" title="Создать пространство">
-                +
-            </button>
+            <NavLink
+                to="/app/spaces/new"
+                className="rail__btn rail__add"
+                title="Создать пространство"
+                aria-label="Создать пространство"
+            >
+                <span className="icon-placeholder" aria-hidden="true" />
+            </NavLink>
         </aside>
     )
 }

@@ -4,250 +4,430 @@ import {
     spaces,
     messagesStore,
     currentUser,
+    friends,
+    incomingRequests,
+    outgoingRequests,
+    directMessages,
+    voiceRooms,
+    settingsDefaults,
 } from '@/mocks/data'
+import { ApiError } from '@/api/client'
 
-const wait = (ms = 300) =>
-    new Promise(resolve => setTimeout(resolve, ms))
+const wait = (ms = 250) => new Promise((resolve) => setTimeout(resolve, ms))
 
-const mockState = {
-    pendingEmail: '',
-    verifiedEmail: '',
-    recoveryEmail: '',
+const fail = (message, code = '') => {
+    throw new ApiError(message, { status: 400, code })
 }
 
-function makeToken() {
-    return `mock-token-${Date.now()}`
-}
+const initials = (name = '') => name.trim().slice(0, 2)
 
-function requireValue(value, message) {
-    if (!String(value ?? '').trim()) {
-        throw new Error(message)
-    }
+const state = {
+    users: [...users],
+    friends: [...friends],
+    incoming: [...incomingRequests],
+    outgoing: [...outgoingRequests],
+    spaces: [...spaces],
+    channels: [...channels],
+    messagesStore: { ...messagesStore },
+    dm: { ...directMessages },
+    voice: [...voiceRooms],
+    settings: { ...settingsDefaults },
+    profile: { ...currentUser },
 }
 
 export const mockApi = {
-    async login({ email, username, password }) {
+    async login({ login, password }) {
         await wait()
 
-        const identifier = email || username
+        if (!login || !password) fail('Введите логин и пароль')
 
-        requireValue(
-            identifier,
-            'Введите почту или username'
-        )
-
-        requireValue(
-            password,
-            'Введите пароль'
-        )
+        const isEmail = login.includes('@')
 
         return {
-            token: makeToken(),
+            token: 'mock-token',
             user: {
-                ...currentUser,
-                email: identifier,
+                ...state.profile,
+                ...(isEmail ? { email: login } : { username: login }),
             },
         }
     },
 
-    async sendCode({
-                       email,
-                       purpose = 'register',
-                   }) {
+    async sendCode({ email }) {
         await wait()
-
-        requireValue(
-            email,
-            'Введите почту'
-        )
-
-        if (purpose === 'recover') {
-            mockState.recoveryEmail = email
-        } else {
-            mockState.pendingEmail = email
-        }
-
-        return {
-            ok: true,
-        }
+        if (!email) fail('Введите почту')
+        return { ok: true }
     },
 
-    async verifyCode({
-                         email,
-                         code,
-                         purpose = 'register',
-                     }) {
+    async verifyCode({ email, code }) {
         await wait()
-
-        if (!/^\d{6}$/.test(String(code ?? ''))) {
-            throw new Error(
-                'Введите 6-значный код'
-            )
+        if (!email) fail('Почта не указана')
+        if (!/^\d{6}$/.test(code)) {
+            fail('Введите 6-значный код', 'INVALID_CODE')
         }
 
-        const expectedEmail =
-            purpose === 'recover'
-                ? mockState.recoveryEmail
-                : mockState.pendingEmail
-
-        if (
-            email &&
-            expectedEmail &&
-            email !== expectedEmail
-        ) {
-            throw new Error(
-                'Код относится к другой почте'
-            )
-        }
-
-        if (purpose === 'recover') {
-            mockState.recoveryEmail =
-                email || expectedEmail
-        } else {
-            mockState.verifiedEmail =
-                email || expectedEmail
-        }
-
-        return {
-            ok: true,
-        }
+        return { ok: true, ticket: 'mock-ticket' }
     },
 
-    async completeProfile(payload) {
+    async completeProfile({ email, ticket, username, displayName, birthDate }) {
         await wait()
 
-        const email =
-            payload.email ||
-            mockState.verifiedEmail ||
-            mockState.pendingEmail
-
-        requireValue(
-            email,
-            'Почта не подтверждена'
-        )
-
-        requireValue(
-            payload.username,
-            'Введите username'
-        )
-
-        const username = String(payload.username || '').trim()
-        const displayName = String(payload.displayName || username).trim()
-
-        if (!/^[A-Za-z0-9_]{3,16}$/.test(username)) {
-            throw new Error(
-                'Username: 3-16 символов, только латиница, цифры и _'
-            )
+        if (!email || !ticket) {
+            fail('Подтвердите почту, чтобы продолжить')
         }
 
-        requireValue(
+        const user = {
+            ...state.profile,
+            email,
+            username,
+            name: displayName,
             displayName,
-            'Введите отображаемое имя'
-        )
-
-        requireValue(
-            payload.password,
-            'Введите пароль'
-        )
-
-        return {
-            token: makeToken(),
-
-            user: {
-                ...currentUser,
-                email,
-                name: displayName,
-                username,
-                status: 'online',
-            },
+            avatar: '',
+            ...(birthDate ? { birthDate } : {}),
         }
+
+        state.profile = user
+        return { token: 'mock-token', user }
     },
 
-    async resetPassword({
-                            email,
-                            code,
-                            password,
-                        }) {
+    async recover({ email }) {
         await wait()
-
-        requireValue(
-            email,
-            'Введите почту'
-        )
-
-        requireValue(
-            password,
-            'Введите новый пароль'
-        )
-
-        if (
-            !/^\d{6}$/.test(
-                String(code ?? '')
-            )
-        ) {
-            throw new Error(
-                'Введите 6-значный код'
-            )
-        }
-
-        return {
-            ok: true,
-        }
+        if (!email) fail('Введите почту')
+        return { ok: true }
     },
 
-    async getChannels() {
+    async resetPassword({ email, code, password }) {
         await wait()
-        return channels
+
+        if (!email) fail('Почта не указана')
+        if (!/^\d{6}$/.test(code)) {
+            fail('Введите 6-значный код', 'INVALID_CODE')
+        }
+        if (!password || password.length < 8) {
+            fail('Пароль должен содержать минимум 8 символов')
+        }
+
+        return { ok: true }
+    },
+
+    async getMe() {
+        await wait()
+        return { ...state.profile }
+    },
+
+    async updateProfile(patch) {
+        await wait()
+        state.profile = { ...state.profile, ...patch }
+        return { ...state.profile }
+    },
+
+    async getSettings() {
+        await wait()
+        return { ...state.settings }
+    },
+
+    async updateSettings(patch) {
+        await wait()
+        state.settings = { ...state.settings, ...patch }
+        return { ...state.settings }
+    },
+
+    async changePassword({ current, next }) {
+        await wait()
+
+        if (!current || !next) fail('Заполните поля')
+        if (next.length < 8) {
+            fail('Пароль должен содержать минимум 8 символов')
+        }
+
+        return { ok: true }
     },
 
     async getSpaces() {
         await wait()
-        return spaces
+        return state.spaces.map((space) => ({ ...space }))
     },
 
-    async getFriends() {
+    async getSpace(id) {
         await wait()
-        return users.slice(0, 4)
+
+        const space = state.spaces.find((item) => item.id === id)
+        if (!space) fail('Пространство не найдено', 'NOT_FOUND')
+
+        return {
+            ...space,
+            channels: state.channels.filter((channel) => channel.spaceId === id),
+            voiceRooms: state.voice.filter((room) => room.spaceId === id),
+        }
+    },
+
+    async getChannels(spaceId) {
+        await wait()
+
+        return spaceId
+            ? state.channels.filter((channel) => channel.spaceId === spaceId)
+            : [...state.channels]
+    },
+
+    async createSpace({ name }) {
+        await wait()
+
+        if (!name?.trim()) fail('Введите название')
+
+        const space = {
+            id: `sp-${Date.now()}`,
+            name: name.trim(),
+            members: 1,
+            icon: null,
+        }
+
+        state.spaces.push(space)
+        return space
     },
 
     async getMessages(channelId) {
         await wait()
-
-        return (
-            messagesStore[channelId] ||
-            []
-        )
+        return (state.messagesStore[channelId] || []).map((message) => ({ ...message }))
     },
 
-    async sendMessage(
-        channelId,
-        content
-    ) {
+    async sendMessage(channelId, content) {
         await wait(150)
 
-        const msg = {
+        const text = content?.trim()
+        if (!text) fail('Пустое сообщение')
+
+        const message = {
             id: `m-${Date.now()}`,
             authorId: 'me',
-
-            time: new Date().toLocaleTimeString(
-                'ru-RU',
-                {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                }
-            ),
-
-            text: content,
+            time: new Date().toLocaleTimeString('ru-RU', {
+                hour: '2-digit',
+                minute: '2-digit',
+            }),
+            text,
             self: true,
             reactions: [],
+            createdAt: new Date().toISOString(),
         }
 
-        if (!messagesStore[channelId]) {
-            messagesStore[channelId] = []
+        if (!state.messagesStore[channelId]) {
+            state.messagesStore[channelId] = []
         }
 
-        messagesStore[channelId].push(msg)
+        state.messagesStore[channelId].push(message)
+        return { ...message }
+    },
 
-        return msg
+    async getFriends() {
+        await wait()
+        return state.friends.map((friend) => ({ ...friend }))
+    },
+
+    async getFriendRequests() {
+        await wait()
+
+        return {
+            incoming: state.incoming.map((request) => ({ ...request })),
+            outgoing: state.outgoing.map((request) => ({ ...request })),
+        }
+    },
+
+    async acceptFriend(id) {
+        await wait()
+
+        const request = state.incoming.find((item) => item.id === id)
+        if (!request) fail('Заявка не найдена', 'NOT_FOUND')
+
+        state.incoming = state.incoming.filter((item) => item.id !== id)
+        state.friends.push({
+            id: request.id,
+            name: request.name,
+            avatar: request.avatar || '',
+            status: 'offline',
+            since: new Date().toISOString().slice(0, 10),
+        })
+
+        return { ok: true }
+    },
+
+    async declineFriend(id) {
+        await wait()
+        state.incoming = state.incoming.filter((item) => item.id !== id)
+        return { ok: true }
+    },
+
+    async removeFriend(id) {
+        await wait()
+        state.friends = state.friends.filter((item) => item.id !== id)
+        return { ok: true }
+    },
+
+    async sendFriendRequest({ username }) {
+        await wait()
+
+        if (!username?.trim()) fail('Введите username')
+
+        const normalized = username.replace(/^@/, '')
+        const user = state.users.find((item) => item.username === normalized)
+
+        if (!user) fail('Пользователь не найден', 'NOT_FOUND')
+
+        const request = {
+            id: `r-${Date.now()}`,
+            name: user.name,
+            avatar: user.avatar || '',
+            username: user.username,
+        }
+
+        state.outgoing.push(request)
+        return request
+    },
+
+    async searchUsers(query) {
+        await wait(180)
+
+        const normalized = (query || '').trim().toLowerCase()
+        if (!normalized) return []
+
+        return state.users
+            .filter((user) =>
+                (user.name || '').toLowerCase().includes(normalized) ||
+                (user.username || '').toLowerCase().includes(normalized)
+            )
+            .slice(0, 20)
+            .map((user) => ({ ...user }))
+    },
+
+    async searchSpaces(query) {
+        await wait(180)
+
+        const normalized = (query || '').trim().toLowerCase()
+        if (!normalized) return []
+
+        return state.spaces
+            .filter((space) => space.name.toLowerCase().includes(normalized))
+            .slice(0, 20)
+            .map((space) => ({ ...space }))
+    },
+
+    async searchMessages(query) {
+        await wait(180)
+
+        const normalized = (query || '').trim().toLowerCase()
+        if (!normalized) return []
+
+        const results = []
+
+        for (const [channelId, messages] of Object.entries(state.messagesStore)) {
+            for (const message of messages) {
+                if (message.text?.toLowerCase().includes(normalized)) {
+                    results.push({ ...message, channelId })
+                }
+            }
+        }
+
+        return results.slice(0, 50)
+    },
+
+    async getDmConversations() {
+        await wait()
+
+        return state.friends.map((friend) => {
+            const messages = state.dm[friend.id] || []
+
+            return {
+                userId: friend.id,
+                name: friend.name,
+                avatar: friend.avatar || '',
+                status: friend.status,
+                last: messages[messages.length - 1] || null,
+            }
+        })
+    },
+
+    async getDmMessages(userId) {
+        await wait()
+        return (state.dm[userId] || []).map((message) => ({ ...message }))
+    },
+
+    async sendDm(userId, content) {
+        await wait(150)
+
+        const text = content?.trim()
+        if (!text) fail('Пустое сообщение')
+
+        const message = {
+            id: `dm-${Date.now()}`,
+            from: 'me',
+            text,
+            time: new Date().toLocaleTimeString('ru-RU', {
+                hour: '2-digit',
+                minute: '2-digit',
+            }),
+        }
+
+        if (!state.dm[userId]) state.dm[userId] = []
+        state.dm[userId].push(message)
+
+        return { ...message }
+    },
+
+    async getVoiceRooms(spaceId) {
+        await wait()
+
+        return state.voice
+            .filter((room) => !spaceId || room.spaceId === spaceId)
+            .map((room) => ({ ...room }))
+    },
+
+    async joinVoice(roomId) {
+        await wait()
+
+        const room = state.voice.find((item) => item.id === roomId)
+        if (!room) fail('Комната не найдена', 'NOT_FOUND')
+
+        if (!room.participants.includes('me')) {
+            room.participants.push('me')
+        }
+
+        room.members = room.participants.length
+        return { ...room }
+    },
+
+    async leaveVoice(roomId) {
+        await wait()
+
+        const room = state.voice.find((item) => item.id === roomId)
+
+        if (room) {
+            room.participants = room.participants.filter((id) => id !== 'me')
+            room.members = room.participants.length
+        }
+
+        return { ok: true }
+    },
+
+    async createInvite({ spaceId }) {
+        await wait()
+
+        if (!spaceId) fail('Пространство не указано')
+
+        const code = Math.random().toString(36).slice(2, 10)
+
+        return {
+            code,
+            url: `${window.location.origin}/invite/${code}`,
+            spaceId,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        }
+    },
+
+    async acceptInvite({ code }) {
+        await wait()
+
+        if (!code) fail('Код не указан')
+
+        const space = state.spaces[0]
+        if (!space) fail('Нет доступных пространств', 'NOT_FOUND')
+
+        return { space }
     },
 }

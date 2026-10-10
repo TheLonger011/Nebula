@@ -1,23 +1,72 @@
 import { useState } from 'react'
-import Input from './Input'
 
-export default function PasswordInput({ label, ...rest }) {
-    const [visible, setVisible] = useState(false)
+function EyeIcon({ className }) {
     return (
-        <Input
-            label={label}
-            type={visible ? 'text' : 'password'}
-            icon={
+        <svg
+            className={className}
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+        >
+            <path
+                d="M2.5 12C2.5 12 6 6.5 12 6.5C18 6.5 21.5 12 21.5 12C21.5 12 18 17.5 12 17.5C6 17.5 2.5 12 2.5 12Z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+            />
+            <circle cx="12" cy="12" r="2.8" stroke="currentColor" strokeWidth="1.8" />
+        </svg>
+    )
+}
+
+/**
+ * Поле пароля с кнопкой «показать».
+ * variant="login"   — разметка окна авторизации (.password-wrapper)
+ * variant="profile" — разметка карточек регистрации/восстановления (.pass-wrap)
+ */
+export default function PasswordInput({
+    variant = 'login',
+    invalid = false,
+    ...inputProps
+}) {
+    const [visible, setVisible] = useState(false)
+
+    const type = visible ? 'text' : 'password'
+    const label = visible ? 'Скрыть пароль' : 'Показать пароль'
+    const toggle = () => setVisible((value) => !value)
+
+    if (variant === 'profile') {
+        return (
+            <div className={`pass-wrap ${invalid ? 'pass-wrap--error' : ''}`.trim()}>
+                <input className="auth-input" type={type} {...inputProps} />
+
                 <button
                     type="button"
-                    onClick={() => setVisible(v => !v)}
-                    style={{ color: 'inherit', display: 'grid', placeItems: 'center' }}
-                    aria-label={visible ? 'Скрыть пароль' : 'Показать пароль'}
+                    className="pass-eye"
+                    aria-label={label}
+                    onClick={toggle}
                 >
-                    <span className="icon-stub">(иконка глаза)</span>
+                    <EyeIcon />
                 </button>
-            }
-            {...rest}
-        />
+            </div>
+        )
+    }
+
+    return (
+        <div className="password-wrapper">
+            <input className="input" type={type} {...inputProps} />
+
+            <span className="password-divider" aria-hidden="true" />
+
+            <button
+                className="password-toggle"
+                type="button"
+                aria-label={label}
+                onClick={toggle}
+            >
+                <EyeIcon className="eye-icon" />
+            </button>
+        </div>
     )
 }
