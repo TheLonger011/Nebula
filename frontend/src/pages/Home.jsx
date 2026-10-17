@@ -134,14 +134,6 @@ export default function Home() {
                             {t('home.tabPeople')}
                         </Link>
                     </nav>
-
-                    <button
-                        type="button"
-                        className="main__invite"
-                        onClick={() => setInviteOpen(true)}
-                    >
-                        {t('common.invite')}
-                    </button>
                 </div>
 
                 <div className="main__content">
@@ -193,7 +185,7 @@ export default function Home() {
 
                     {!loading && !error && shown.channels.length > 0 && (
                         <div className="channels">
-                            {shown.channels.map((ch) => (
+                            {shown.channels.slice(0, 8).map((ch) => (
                                 <Link
                                     key={ch.id}
                                     to={`/app/channels/${ch.id}`}
@@ -236,7 +228,7 @@ export default function Home() {
 
                     {!loading && !error && shown.spaces.length > 0 && (
                         <div className="spaces">
-                            {shown.spaces.map((sp) => (
+                            {shown.spaces.slice(0, 8).map((sp) => (
                                 <Link
                                     key={sp.id}
                                     to={`/app/spaces/${sp.id}`}
@@ -244,14 +236,19 @@ export default function Home() {
                                 >
                                     <div className="space-card__art">
                                         {sp.avatarUrl || sp.avatar_url ? (
-                                            <Avatar src={sp.avatarUrl || sp.avatar_url} label={sp.name} size={56} />
+                                            <Avatar src={sp.avatarUrl || sp.avatar_url} label={sp.name} size={44} />
                                         ) : (
                                             sp.emoji || <Icon name="users" />
                                         )}
                                     </div>
-                                    <div className="space-card__name">{sp.name}</div>
-                                    <div className="space-card__members">
-                                        {t('home.members', { count: sp.members })}
+                                    <div className="space-card__info">
+                                        <div className="space-card__name">{sp.name}</div>
+                                        {sp.description && (
+                                            <div className="space-card__desc">{sp.description}</div>
+                                        )}
+                                        <div className="space-card__members">
+                                            {t('home.members', { count: sp.members })}
+                                        </div>
                                     </div>
                                 </Link>
                             ))}
@@ -279,7 +276,7 @@ export default function Home() {
                                     to={`/app/dm/${f.id}`}
                                     className="friend-card"
                                 >
-                                    <Avatar src={f.avatarUrl || f.avatar_url || f.avatar} label={f.displayName || f.name} size={56} />
+                                    <Avatar src={f.avatarUrl || f.avatar_url || f.avatar} label={f.displayName || f.name} size={80} />
                                     <div className="friend-card__name">{f.name}</div>
                                     <div className={`friend-card__status friend-card__status--${f.status}`}>
                                         {f.status === 'voice'

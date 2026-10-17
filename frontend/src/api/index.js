@@ -159,6 +159,7 @@ const realApi = {
             members: Array.isArray(data?.members) ? data.members.map(normalizeUser) : [],
         }
     },
+    joinSpace: (id) => http.post(`/spaces/${id}/join`, {}),
     updateSpace: async (id, p) => normalizeSpace(await http.patch(`/spaces/${id}`, p)),
     deleteSpace: (id) => http.delete(`/spaces/${id}`),
     deleteSpaceAvatar: async (id) => normalizeSpace(await http.delete(`/spaces/${id}/avatar`)),
@@ -180,6 +181,39 @@ const realApi = {
         const query = channelId ? `?channelId=${encodeURIComponent(channelId)}` : ''
         const members = await http.get(`/spaces/${spaceId}/members${query}`)
         return Array.isArray(members) ? members.map(normalizeUser) : []
+    },
+    getSpaceFiles: async (spaceId, { channelId, kind, limit, offset } = {}) => {
+        const query = new URLSearchParams()
+        if (channelId) query.set('channelId', channelId)
+        if (kind) query.set('kind', kind)
+        if (limit) query.set('limit', String(limit))
+        if (offset) query.set('offset', String(offset))
+        const qs = query.toString()
+        const page = await http.get(`/spaces/${spaceId}/files${qs ? `?${qs}` : ''}`)
+        return {
+            hasMore: Boolean(page?.hasMore),
+            items: Array.isArray(page?.items)
+                ? page.items.map((item) => ({ ...item, author: normalizeUser(item.author) }))
+                : [],
+        }
+    },
+    getSpaceThreads: async (spaceId, { channelId, limit, offset } = {}) => {
+        const query = new URLSearchParams()
+        if (channelId) query.set('channelId', channelId)
+        if (limit) query.set('limit', String(limit))
+        if (offset) query.set('offset', String(offset))
+        const qs = query.toString()
+        const page = await http.get(`/spaces/${spaceId}/threads${qs ? `?${qs}` : ''}`)
+        return {
+            hasMore: Boolean(page?.hasMore),
+            items: Array.isArray(page?.items)
+                ? page.items.map((item) => ({
+                    ...item,
+                    author: normalizeUser(item.author),
+                    lastReplyAuthor: normalizeUser(item.lastReplyAuthor),
+                }))
+                : [],
+        }
     },
     createSpace: (p) => http.post('/spaces', p),
     createChannel: async (spaceId, input) => {

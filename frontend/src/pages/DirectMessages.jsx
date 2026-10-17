@@ -306,12 +306,15 @@ export function DmChat() {
     const { active, startCall } = useCall()
     const callHere = active?.kind === 'call' && String(active.peer?.id) === String(userId)
     const callBusy = Boolean(active)
+    const [chatOpen, setChatOpen] = useState(false)
+    useEffect(() => { if (!callHere) setChatOpen(false) }, [callHere])
+    const stageView = callHere && !chatOpen
     const callPeer = peer ? { ...peer, id: userId } : null
 
     return (
         <div className="app-layout">
 
-            <main className="chat">
+            <main className={`chat${stageView ? ' voice-page' : ''}`}>
                 <header className="chat__header">
                     <Link to={`/app/users/${userId}`}>
                         <Avatar
@@ -335,6 +338,18 @@ export function DmChat() {
                     <div className="chat__header-spacer" />
 
                     <div className="chat__call-actions">
+                        {callHere && (
+                            <button
+                                type="button"
+                                className={`chat__call-btn${chatOpen ? ' is-on' : ''}`}
+                                onClick={() => setChatOpen((open) => !open)}
+                                title={chatOpen ? t('call.showCall') : t('call.showChat')}
+                                aria-label={chatOpen ? t('call.showCall') : t('call.showChat')}
+                            >
+                                <Icon name={chatOpen ? 'headphones' : 'message-square'} />
+                            </button>
+                        )}
+
                         <button
                             type="button"
                             className="chat__call-btn"
@@ -359,7 +374,20 @@ export function DmChat() {
                     </div>
                 </header>
 
-                {callHere && <VoiceStage roomId={active.roomId} />}
+                {stageView && (
+                    <div className="voice-page__body">
+                        <VoiceStage roomId={active.roomId} />
+                    </div>
+                )}
+
+                {callHere && chatOpen && (
+                    <div className="dm-call">
+                        <VoiceStage roomId={active.roomId} compact />
+                    </div>
+                )}
+
+                {!stageView && (
+                    <>
 
                 <div className="chat__messages">
                     {loading && <p className="muted">{t('common.loading')}</p>}
@@ -411,6 +439,8 @@ export function DmChat() {
                     replyTo={replyTo}
                     onCancelReply={() => setReplyTo(null)}
                 />
+                    </>
+                )}
             </main>
 
             <RightSidebar />

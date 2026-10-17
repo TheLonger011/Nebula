@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import RightSidebar from '@/components/RightSidebar'
 import SpaceChannelSidebar from '@/components/SpaceChannelSidebar'
 import SpaceMembersSidebar from '@/components/SpaceMembersSidebar'
+import SpaceNavButton from '@/components/SpaceNavButton'
 import MessageList from '@/components/MessageList'
 import MessageComposer from '@/components/MessageComposer'
 import InviteDialog from '@/components/InviteDialog'
@@ -18,6 +19,8 @@ export default function Chat() {
     const { user } = useAuth()
     const { subscribe } = useNotifications()
     const navigate = useNavigate()
+    const [searchParams, setSearchParams] = useSearchParams()
+    const targetMessageId = searchParams.get('message')
 
     const [channel, setChannel] = useState(null)
     const [space, setSpace] = useState(null)
@@ -80,6 +83,30 @@ export default function Chat() {
     useEffect(() => {
         loadAll()
     }, [channelId])
+
+    // Opened from the Files / Threads panel: scroll to the message and highlight it.
+    useEffect(() => {
+        if (!targetMessageId || loading) return undefined
+
+        const timer = window.setTimeout(() => {
+            const target = document.getElementById(`message-${targetMessageId}`)
+
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                target.classList.remove('message--highlight')
+                void target.offsetWidth
+                target.classList.add('message--highlight')
+                window.setTimeout(() => target.classList.remove('message--highlight'), 1800)
+            }
+
+            setSearchParams((params) => {
+                params.delete('message')
+                return params
+            }, { replace: true })
+        }, 150)
+
+        return () => window.clearTimeout(timer)
+    }, [targetMessageId, loading, channelId])
 
     const refetchMessages = useCallback(async () => {
         try {
@@ -164,6 +191,7 @@ export default function Chat() {
                 <SpaceChannelSidebar spaceId={channel.spaceId} activeChannelId={channelId} spaceName={space?.name} />
                 <main className="chat chat--space">
                     <header className="chat__header">
+                        <SpaceNavButton />
                         <div className="chat__title-wrap">
                             <div className="chat__title"><span className="chat__title-hash">#</span> {channel?.name || channelId}</div>
                             <div className="chat__sub">Общайтесь с участниками пространства</div>

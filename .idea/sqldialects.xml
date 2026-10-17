@@ -27,5 +27,7 @@
     <file url="file://$PROJECT_DIR$/migrations/000012_message_actions_and_profile_banner.up.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/migrations/000013_remove_profile_banner.down.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/migrations/000013_remove_profile_banner.up.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/migrations/000014_space_visibility.down.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/migrations/000014_space_visibility.up.sql" dialect="GenericSQL" />
   </component>
 </project>

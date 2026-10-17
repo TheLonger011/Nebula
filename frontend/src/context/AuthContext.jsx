@@ -7,7 +7,7 @@ import {
     useState,
 } from 'react'
 import { api } from '@/api'
-import { session, UNAUTHORIZED_EVENT } from '@/api/client'
+import { http, session, UNAUTHORIZED_EVENT, USE_MOCK } from '@/api/client'
 import { t } from '@/i18n'
 
 const AuthCtx = createContext(null)
@@ -17,6 +17,13 @@ export function AuthProvider({ children }) {
     const [user, setUser] = useState(restoreUser)
 
     const logout = useCallback(() => {
+        const refreshToken = session.getRefreshToken()
+
+        // Revoke the refresh token on the server (best effort).
+        if (refreshToken && !USE_MOCK) {
+            http.post('/auth/logout', { refresh_token: refreshToken }, { skipAuth: true }).catch(() => {})
+        }
+
         session.clear()
         setUser(null)
     }, [])
@@ -33,12 +40,13 @@ export function AuthProvider({ children }) {
 
     const startSession = useCallback((payload) => {
         const { user: nextUser, token } = payload || {}
+        const refreshToken = payload?.refresh_token || payload?.refreshToken || ''
 
         if (!nextUser || !token) {
             throw new Error(t('errors.badResponse'))
         }
 
-        session.save(token, nextUser)
+        session.save(token, nextUser, refreshToken)
         setUser(nextUser)
         return nextUser
     }, [])

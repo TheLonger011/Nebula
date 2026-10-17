@@ -104,6 +104,15 @@ export default function RightPanel({ tabs, tab, onTabChange, className = '', chi
                                 <span className="rightbar__rail-label">{t(item.labelKey)}</span>
                             </button>
                         ))}
+
+                        <button
+                            type="button"
+                            className="rightbar__rail-close"
+                            onClick={rightPanel.close}
+                            aria-label={t('rightbar.close')}
+                        >
+                            <Icon name="x" />
+                        </button>
                     </div>
                 </div>
             </aside>

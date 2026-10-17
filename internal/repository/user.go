@@ -117,3 +117,15 @@ func (r *UserRepository) UpdateProfile(ctx context.Context, id uuid.UUID, userna
 	}
 	return r.GetByID(ctx, id)
 }
+
+// UpdatePassword replaces the password hash of an active user.
+func (r *UserRepository) UpdatePassword(ctx context.Context, id uuid.UUID, hash string) error {
+	tag, err := r.db.Exec(ctx, `UPDATE users SET password_hash=$2, updated_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id, hash)
+	if err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

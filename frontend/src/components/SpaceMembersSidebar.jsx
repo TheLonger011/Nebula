@@ -8,6 +8,8 @@ import { useAppEvent } from '@/hooks/useAppEvent'
 import Avatar from './Avatar'
 import EmptyState from './EmptyState'
 import RightPanel from './RightPanel'
+import SpaceFilesPanel from './SpaceFilesPanel'
+import SpaceThreadsPanel from './SpaceThreadsPanel'
 
 const REFRESH_MS = 30000
 const OWNER_COLOR = '#ffb020'
@@ -161,6 +163,8 @@ export default function SpaceMembersSidebar({ space, channelId }) {
     const [members, setMembers] = useState([])
     const [loading, setLoading] = useState(true)
     const spaceId = space?.id
+    // Voice rooms have no files or threads of their own, so "this channel" only applies to text channels.
+    const textChannelId = space?.channels?.some((item) => item.id === channelId) ? channelId : undefined
 
     const load = useCallback(async () => {
         if (!spaceId) return
@@ -223,20 +227,12 @@ export default function SpaceMembersSidebar({ space, channelId }) {
                 </div>
             )}
 
-            {tab === 'threads' && (
-                <EmptyState
-                    icon="git-branch"
-                    title={t('rightbar.noThreadsTitle')}
-                    description={t('rightbar.noThreadsDesc')}
-                />
+            {tab === 'threads' && spaceId && (
+                <SpaceThreadsPanel spaceId={spaceId} channelId={textChannelId} />
             )}
 
-            {tab === 'files' && (
-                <EmptyState
-                    icon="folder"
-                    title={t('rightbar.noFilesTitle')}
-                    description={t('rightbar.noFilesDesc')}
-                />
+            {tab === 'files' && spaceId && (
+                <SpaceFilesPanel spaceId={spaceId} channelId={textChannelId} />
             )}
         </RightPanel>
     )

@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import VisibilityPicker from '@/components/VisibilityPicker'
 import RightSidebar from '@/components/RightSidebar'
 import PageHeader from '@/components/PageHeader'
 import EmptyState from '@/components/EmptyState'
 import SpaceChannelSidebar from '@/components/SpaceChannelSidebar'
 import SpaceMembersSidebar from '@/components/SpaceMembersSidebar'
 import Avatar from '@/components/Avatar'
+import MenuButton from '@/components/MenuButton'
+import SpaceNavButton, { SPACE_NAV_EVENT } from '@/components/SpaceNavButton'
 import { api } from '@/api'
 import { useI18n } from '@/i18n'
 import { useAppEvent } from '@/hooks/useAppEvent'
@@ -109,6 +112,7 @@ export function CreateSpace() {
     const navigate = useNavigate()
     const [name, setName] = useState('')
     const [description, setDescription] = useState('')
+    const [isPublic, setIsPublic] = useState(false)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
 
@@ -121,6 +125,7 @@ export function CreateSpace() {
             const space = await api.createSpace({
                 name: name.trim(),
                 description: description.trim(),
+                isPublic,
             })
 
             navigate(`/app/spaces/${space.id}`)
@@ -161,6 +166,11 @@ export function CreateSpace() {
                                 maxLength={500}
                                 rows={4}
                             />
+                        </div>
+
+                        <div className="settings-form__field">
+                            <label>{t('spaces.visibility')}</label>
+                            <VisibilityPicker value={isPublic} onChange={setIsPublic} disabled={loading} />
                         </div>
 
                         {error && (
@@ -209,10 +219,32 @@ export function SpaceDetails() {
 
     useAppEvent(['space_updated'], load)
 
+    const [joining, setJoining] = useState(false)
+    const join = async () => {
+        setJoining(true)
+        setError('')
+        try {
+            await api.joinSpace(spaceId)
+            await load()
+        } catch (err) {
+            setError(err?.message || t('spaces.joinFailed'))
+        } finally {
+            setJoining(false)
+        }
+    }
+
     return (
         <div className="app-layout app-layout--space">
             <SpaceChannelSidebar spaceId={spaceId} spaceName={space?.name} />
             <main className="space-welcome">
+                <header className="space-topbar">
+                    <MenuButton />
+                    <div className="space-topbar__back">
+                        <span className="space-topbar__title">{space?.name || t('nav.spaces')}</span>
+                    </div>
+                    <SpaceNavButton />
+                </header>
+
                 {loading && <p className="muted">{t('common.loading')}</p>}
                 {!loading && error && (
                     <div className="space-welcome__error">
@@ -230,6 +262,18 @@ export function SpaceDetails() {
                         <h1>{space.name}</h1>
                         <p>{space.description || 'Добро пожаловать в пространство. Выберите канал слева или создайте новый.'}</p>
                         <div className="space-welcome__actions">
+                            <button
+                                type="button"
+                                className="btn btn--ghost space-welcome__channels"
+                                onClick={() => window.dispatchEvent(new CustomEvent(SPACE_NAV_EVENT))}
+                            >
+                                <Icon name="hash" /> {t('spacenav.channels')}
+                            </button>
+                            {space.isMember === false && (
+                                <button type="button" className="btn btn--primary" onClick={join} disabled={joining}>
+                                    {t('spaces.join')}
+                                </button>
+                            )}
                             {space.can?.manageChannels && (
                                 <>
                                     <button type="button" className="btn btn--primary" onClick={() => window.dispatchEvent(new CustomEvent('nebula-create-channel', { detail: 'text' }))}>＋ Создать текстовый канал</button>

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import VisibilityPicker from '@/components/VisibilityPicker'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import SpaceChannelSidebar from '@/components/SpaceChannelSidebar'
+import MenuButton from '@/components/MenuButton'
+import SpaceNavButton from '@/components/SpaceNavButton'
 import Avatar from '@/components/Avatar'
 import Icon from '@/assets/icon/Icon.jsx'
 import ConfirmDialog from '@/components/ConfirmDialog'
@@ -65,6 +68,7 @@ function OverviewTab({ spaceId, data, reload }) {
     const can = data.can
     const [name, setName] = useState(space.name || '')
     const [description, setDescription] = useState(space.description || '')
+    const [isPublic, setIsPublic] = useState(Boolean(space.isPublic))
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState('')
     const [notice, flash] = useFlash()
@@ -72,7 +76,7 @@ function OverviewTab({ spaceId, data, reload }) {
     const [confirmDelete, setConfirmDelete] = useState(false)
     const fileRef = useRef(null)
 
-    const changed = name.trim() !== (space.name || '') || description.trim() !== (space.description || '')
+    const changed = name.trim() !== (space.name || '') || description.trim() !== (space.description || '') || isPublic !== Boolean(space.isPublic)
 
     const run = async (action, okText) => {
         setBusy(true)
@@ -92,7 +96,7 @@ function OverviewTab({ spaceId, data, reload }) {
 
     const save = (event) => {
         event.preventDefault()
-        run(() => api.updateSpace(spaceId, { name: name.trim(), description: description.trim() }), t('ss.saved'))
+        run(() => api.updateSpace(spaceId, { name: name.trim(), description: description.trim(), isPublic }), t('ss.saved'))
     }
 
     const upload = (event) => {
@@ -179,6 +183,11 @@ function OverviewTab({ spaceId, data, reload }) {
                         disabled={busy || !can.manageSpace}
                         onChange={(event) => setDescription(event.target.value)}
                     />
+                </div>
+
+                <div className="settings-form__field">
+                    <label>{t('spaces.visibility')}</label>
+                    <VisibilityPicker value={isPublic} onChange={setIsPublic} disabled={busy || !can.manageSpace} />
                 </div>
 
                 <Feedback error={error} notice={notice} />
@@ -737,9 +746,13 @@ export default function SpaceSettings() {
 
             <main className="space-settings">
                 <header className="space-settings__header">
-                    <Link to={`/app/spaces/${spaceId}`} className="space-settings__back">
-                        ← {data?.space?.name || t('ss.back')}
-                    </Link>
+                    <div className="space-settings__toprow">
+                        <MenuButton />
+                        <Link to={`/app/spaces/${spaceId}`} className="space-settings__back">
+                            ← {data?.space?.name || t('ss.back')}
+                        </Link>
+                        <SpaceNavButton />
+                    </div>
                     <h1>{t('ss.title')}</h1>
 
                     {tabs.length > 0 && (

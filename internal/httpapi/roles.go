@@ -792,10 +792,12 @@ func (s *Server) spaceSettings(w http.ResponseWriter, r *http.Request, spaceID u
 	}
 	var memberCount int
 	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM (SELECT user_id FROM space_members WHERE space_id = $1 UNION SELECT owner_id FROM spaces WHERE id = $1) t`, spaceID).Scan(&memberCount)
+	var isPublic bool
+	_ = s.db.QueryRow(ctx, `SELECT is_public FROM spaces WHERE id = $1`, spaceID).Scan(&isPublic)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"space": map[string]any{
 			"id": spaceID, "name": name, "description": description, "avatarUrl": avatarURL,
-			"ownerId": ownerID, "members": memberCount,
+			"ownerId": ownerID, "members": memberCount, "isPublic": isPublic,
 		},
 		"isOwner":     p.Owner,
 		"permissions": p.effective(),
@@ -814,6 +816,7 @@ func (s *Server) patchSpace(w http.ResponseWriter, r *http.Request, spaceID uuid
 	var in struct {
 		Name        *string `json:"name"`
 		Description *string `json:"description"`
+		IsPublic    *bool   `json:"isPublic"`
 	}
 	if !decode(w, r, &in) {
 		return
@@ -836,16 +839,17 @@ func (s *Server) patchSpace(w http.ResponseWriter, r *http.Request, spaceID uuid
 		description = &v
 	}
 	var outName, outDesc, outAvatar string
+	var outPublic bool
 	err := s.db.QueryRow(r.Context(), `
-		UPDATE spaces SET name = COALESCE($2, name), description = COALESCE($3, description)
-		WHERE id = $1 RETURNING name, COALESCE(description, ''), COALESCE(avatar_url, '')`,
-		spaceID, name, description).Scan(&outName, &outDesc, &outAvatar)
+		UPDATE spaces SET name = COALESCE($2, name), description = COALESCE($3, description), is_public = COALESCE($4, is_public)
+		WHERE id = $1 RETURNING name, COALESCE(description, ''), COALESCE(avatar_url, ''), is_public`,
+		spaceID, name, description, in.IsPublic).Scan(&outName, &outDesc, &outAvatar, &outPublic)
 	if err != nil {
 		s.writeError(w, err)
 		return
 	}
 	s.notifySpace(r.Context(), spaceID, "space_updated")
-	writeJSON(w, http.StatusOK, map[string]any{"id": spaceID, "name": outName, "description": outDesc, "avatarUrl": outAvatar, "avatar_url": outAvatar})
+	writeJSON(w, http.StatusOK, map[string]any{"id": spaceID, "name": outName, "description": outDesc, "avatarUrl": outAvatar, "avatar_url": outAvatar, "isPublic": outPublic})
 }
 
 func (s *Server) deleteSpaceAvatar(w http.ResponseWriter, r *http.Request, spaceID uuid.UUID, p spacePerms) {

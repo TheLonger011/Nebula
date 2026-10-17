@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import SpaceChannelSidebar from '@/components/SpaceChannelSidebar'
 import SpaceMembersSidebar from '@/components/SpaceMembersSidebar'
+import SpaceNavButton from '@/components/SpaceNavButton'
 import VoiceStage from '@/components/VoiceStage'
 import Avatar from '@/components/Avatar'
 import Icon from '@/assets/icon/Icon.jsx'
@@ -82,6 +83,7 @@ export default function VoiceRoom() {
 
             <main className="chat chat--space voice-page">
                 <header className="chat__header">
+                    {room?.spaceId && <SpaceNavButton />}
                     <div className="chat__title-wrap">
                         <div className="chat__title">
                             <Icon name="volume-2" className="voice-page__icon" /> {room?.name || t('voice.roomTitle')}
@@ -98,31 +100,39 @@ export default function VoiceRoom() {
 
                     {!loading && !error && !connected && (
                         <div className="voice-join">
-                            {people.length === 0 ? (
-                                <p className="muted">{t('voice.empty')}</p>
-                            ) : (
-                                <div className="voice-join__people">
-                                    {people.map((person) => (
-                                        <div key={person.id} className="voice-join__person">
-                                            <Avatar
-                                                src={person.avatarUrl || person.avatar}
-                                                label={person.displayName || person.name}
-                                                size={56}
-                                            />
-                                            <span>{person.displayName || person.name}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                            <div className="voice-join__card">
+                                <span className="voice-join__icon"><Icon name="volume-2" /></span>
+                                <h2 className="voice-join__title">{room?.name || t('voice.roomTitle')}</h2>
+                                <p className="voice-join__sub">
+                                    {people.length === 0
+                                        ? t('voice.empty')
+                                        : t('voice.participantsCount', { count: people.length })}
+                                </p>
 
-                            <button
-                                type="button"
-                                className="btn btn--primary"
-                                onClick={connect}
-                                disabled={busy || status === 'connecting'}
-                            >
-                                {busy ? t('voice.connecting') : t('voice.joinRoom')}
-                            </button>
+                                {people.length > 0 && (
+                                    <div className="voice-join__people">
+                                        {people.map((person) => (
+                                            <div key={person.id} className="voice-join__person">
+                                                <Avatar
+                                                    src={person.avatarUrl || person.avatar}
+                                                    label={person.displayName || person.name}
+                                                    size={52}
+                                                />
+                                                <span>{person.displayName || person.name}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <button
+                                    type="button"
+                                    className="btn btn--primary"
+                                    onClick={connect}
+                                    disabled={busy || status === 'connecting'}
+                                >
+                                    {busy ? t('voice.connecting') : t('voice.joinRoom')}
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>

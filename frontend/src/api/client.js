@@ -25,6 +25,7 @@ export const resolveAssetURL = (url) => {
 export const assetUrl = resolveAssetURL
 
 const TOKEN_KEY = 'nebula_token'
+const REFRESH_KEY = 'nebula_refresh_token'
 const USER_KEY = 'nebula_user'
 const PENDING_KEY = 'nebula_pending_registration'
 
@@ -63,6 +64,8 @@ function remove(storage, key) {
 export const session = {
     getToken: () => read(localStorage, TOKEN_KEY),
 
+    getRefreshToken: () => read(localStorage, REFRESH_KEY),
+
     getUser() {
         const raw = read(localStorage, USER_KEY)
         if (!raw) return null
@@ -75,13 +78,26 @@ export const session = {
         }
     },
 
-    save(token, user) {
+    // `refreshToken === undefined` keeps the stored one (profile updates),
+    // an empty string removes it (new session without refresh support).
+    save(token, user, refreshToken) {
         write(localStorage, TOKEN_KEY, token)
         write(localStorage, USER_KEY, JSON.stringify(user))
+
+        if (refreshToken !== undefined) {
+            if (refreshToken) write(localStorage, REFRESH_KEY, refreshToken)
+            else remove(localStorage, REFRESH_KEY)
+        }
+    },
+
+    setTokens(token, refreshToken) {
+        write(localStorage, TOKEN_KEY, token)
+        if (refreshToken) write(localStorage, REFRESH_KEY, refreshToken)
     },
 
     clear() {
         remove(localStorage, TOKEN_KEY)
+        remove(localStorage, REFRESH_KEY)
         remove(localStorage, USER_KEY)
     },
 }
@@ -156,8 +172,118 @@ function extractCode(data) {
     return ''
 }
 
-async function request(path, { skipAuth = false, headers, ...options } = {}) {
-    const token = skipAuth ? null : session.getToken()
+// ---- Access token refresh -------------------------------------------------
+// The access token lives 15 minutes; the refresh token (30 days) silently
+// exchanges it for a new pair, so the user is only logged out when the
+// refresh token itself is invalid or expired.
+
+const REFRESH_SKEW_MS = 60 * 1000
+
+function tokenExpiresAt(token) {
+    try {
+        const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+        const { exp } = JSON.parse(atob(payload))
+        return typeof exp === 'number' ? exp * 1000 : 0
+    } catch {
+        return 0
+    }
+}
+
+function isExpiring(token) {
+    const expiresAt = token ? tokenExpiresAt(token) : 0
+    return expiresAt > 0 && expiresAt - Date.now() < REFRESH_SKEW_MS
+}
+
+let refreshing = null
+
+async function exchangeRefreshToken() {
+    const refreshToken = session.getRefreshToken()
+    if (!refreshToken) return false
+
+    let response
+
+    try {
+        response = await fetch(`${API_URL}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: refreshToken }),
+        })
+    } catch {
+        return null
+    }
+
+    if (response.status === 400 || response.status === 401 || response.status === 403) {
+        return false
+    }
+
+    if (!response.ok) return null
+
+    const data = await parseBody(response)
+    const token = data?.token || data?.access_token
+    const nextRefresh = data?.refresh_token
+
+    if (!token || !nextRefresh) return false
+
+    session.setTokens(token, nextRefresh)
+    return true
+}
+
+// Resolves to true (fresh token stored), false (session is really over)
+// or null (could not reach the server, keep the session and try later).
+export function refreshSession(staleToken = session.getToken()) {
+    if (refreshing) return refreshing
+
+    // Another request or another tab has already refreshed.
+    const current = session.getToken()
+    if (current && current !== staleToken && !isExpiring(current)) {
+        return Promise.resolve(true)
+    }
+
+    refreshing = (async () => {
+        const run = async () => {
+            // Re-check inside the lock: another tab may have rotated the tokens meanwhile.
+            const latest = session.getToken()
+            if (latest && latest !== staleToken && !isExpiring(latest)) return true
+
+            return exchangeRefreshToken()
+        }
+
+        if (typeof navigator !== 'undefined' && navigator.locks?.request) {
+            return navigator.locks.request('nebula-token-refresh', run)
+        }
+
+        return run()
+    })().finally(() => {
+        refreshing = null
+    })
+
+    return refreshing
+}
+
+async function ensureFreshToken() {
+    const token = session.getToken()
+
+    if (token && isExpiring(token) && session.getRefreshToken()) {
+        await refreshSession(token)
+        return session.getToken()
+    }
+
+    return token
+}
+
+// Returns true when the failed request may be retried with the new token.
+async function recoverFromUnauthorized(failedToken) {
+    const refreshed = await refreshSession(failedToken)
+
+    if (refreshed === false) {
+        window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
+    }
+
+    return refreshed === true
+}
+
+async function request(path, { skipAuth = false, headers, _retried = false, ...options } = {}) {
+    const token = skipAuth ? null : await ensureFreshToken()
 
     let response
 
@@ -183,7 +309,11 @@ async function request(path, { skipAuth = false, headers, ...options } = {}) {
 
     if (!response.ok) {
         if (response.status === 401 && token) {
-            window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
+            if (!_retried && await recoverFromUnauthorized(token)) {
+                return request(path, { skipAuth, headers, _retried: true, ...options })
+            }
+
+            if (_retried) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
         }
 
         const code = extractCode(data)
@@ -230,8 +360,7 @@ export const http = {
 }
 
 export function uploadWithProgress(path, formData, { onProgress, signal } = {}) {
-    return new Promise((resolve, reject) => {
-        const token = session.getToken()
+    const send = (token, retried) => new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest()
 
         xhr.open('POST', `${API_URL}${path}`)
@@ -248,7 +377,7 @@ export function uploadWithProgress(path, formData, { onProgress, signal } = {}) 
         xhr.onabort = () =>
             reject(new ApiError('', { code: 'ABORTED' }))
 
-        xhr.onload = () => {
+        xhr.onload = async () => {
             let data = null
 
             try {
@@ -263,7 +392,12 @@ export function uploadWithProgress(path, formData, { onProgress, signal } = {}) 
             }
 
             if (xhr.status === 401 && token) {
-                window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
+                if (!retried && await recoverFromUnauthorized(token)) {
+                    send(session.getToken(), true).then(resolve, reject)
+                    return
+                }
+
+                if (retried) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
             }
 
             const code = extractCode(data)
@@ -278,6 +412,8 @@ export function uploadWithProgress(path, formData, { onProgress, signal } = {}) 
         signal?.addEventListener('abort', () => xhr.abort(), { once: true })
         xhr.send(formData)
     })
+
+    return ensureFreshToken().then((token) => send(token, false))
 }
 
 const blobCache = new Map()
@@ -287,15 +423,22 @@ export async function fetchBlob(url, { download = false } = {}) {
     if (blobCache.has(key)) return blobCache.get(key)
 
     const promise = (async () => {
-        const token = session.getToken()
+        let token = await ensureFreshToken()
         const full = assetUrl(url) + (download ? '?download=1' : '')
 
         let response
 
+        const load = () => fetch(full, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+
         try {
-            response = await fetch(full, {
-                headers: token ? { Authorization: `Bearer ${token}` } : {},
-            })
+            response = await load()
+
+            if (response.status === 401 && token && await recoverFromUnauthorized(token)) {
+                token = session.getToken()
+                response = await load()
+            }
         } catch (cause) {
             throw new ApiError(t('errors.network'), { code: 'NETWORK_ERROR', cause })
         }
@@ -326,9 +469,10 @@ export function subscribeEvents(onEvent, onStatus) {
 
     const run = async () => {
         while (!stopped) {
-            const token = session.getToken()
+            const token = await ensureFreshToken()
 
             if (!token) return
+            if (stopped) return
 
             controller = new AbortController()
 
@@ -339,8 +483,14 @@ export function subscribeEvents(onEvent, onStatus) {
                 })
 
                 if (response.status === 401) {
-                    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
-                    return
+                    // Expired access token: refresh and reconnect right away.
+                    if (await recoverFromUnauthorized(token)) {
+                        retry = 1000
+                        continue
+                    }
+
+                    if (!session.getToken()) return
+                    throw new Error('sse')
                 }
 
                 if (!response.ok || !response.body) throw new Error('sse')

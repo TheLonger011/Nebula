@@ -38,11 +38,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/auth/verify", s.verifyCode)
 	mux.HandleFunc("/api/auth/profile", s.register)
 	mux.HandleFunc("/api/auth/login", s.login)
+	mux.HandleFunc("/api/auth/recover", s.recoverPassword)
+	mux.HandleFunc("/api/auth/reset", s.resetPassword)
+	mux.HandleFunc("/api/auth/refresh", s.refresh)
+	mux.HandleFunc("/api/auth/logout", s.logout)
 	mux.Handle("/api/friends", s.requireAuth(http.HandlerFunc(s.friendRoutes)))
 	mux.Handle("/api/friends/", s.requireAuth(http.HandlerFunc(s.friendRoutes)))
 	mux.Handle("/api/me", s.requireAuth(http.HandlerFunc(s.profileRoutes)))
 	mux.Handle("/api/me/avatar", s.requireAuth(http.HandlerFunc(s.meAvatar)))
-	mux.Handle("/api/me/email", s.requireAuth(http.HandlerFunc(s.changeEmail)))
+	mux.Handle("/api/me/email/code", s.requireAuth(http.HandlerFunc(s.requestEmailChangeCode)))
+	mux.Handle("/api/me/email/verify", s.requireAuth(http.HandlerFunc(s.changeEmail)))
 	mux.Handle("/api/me/password", s.requireAuth(http.HandlerFunc(s.changePassword)))
 	mux.HandleFunc("/api/avatars/", s.serveAvatar)
 	mux.HandleFunc("/api/space-avatars/", s.serveSpaceAvatar)
@@ -98,6 +103,40 @@ func (s *Server) sendCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.auth.SendCode(r.Context(), input.Email); err != nil {
+		s.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) recoverPassword(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, http.MethodPost) {
+		return
+	}
+	var input codeRequest
+	if !decode(w, r, &input) {
+		return
+	}
+	if err := s.auth.RequestPasswordReset(r.Context(), input.Email); err != nil {
+		s.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) resetPassword(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, http.MethodPost) {
+		return
+	}
+	var input struct {
+		Email    string `json:"email"`
+		Code     string `json:"code"`
+		Password string `json:"password"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	if err := s.auth.ResetPassword(r.Context(), input.Email, input.Code, input.Password); err != nil {
 		s.writeError(w, err)
 		return
 	}
@@ -174,6 +213,41 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	s.writeAuth(w, result)
 }
 
+type refreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, http.MethodPost) {
+		return
+	}
+	var input refreshRequest
+	if !decode(w, r, &input) {
+		return
+	}
+	result, err := s.auth.Refresh(r.Context(), input.RefreshToken, r.UserAgent())
+	if err != nil {
+		s.writeError(w, err)
+		return
+	}
+	s.writeAuth(w, result)
+}
+
+func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, http.MethodPost) {
+		return
+	}
+	var input refreshRequest
+	if !decode(w, r, &input) {
+		return
+	}
+	if err := s.auth.Logout(r.Context(), input.RefreshToken); err != nil {
+		s.writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) writeAuth(w http.ResponseWriter, result *service.AuthResult) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token":         result.AccessToken,
@@ -197,6 +271,7 @@ func publicUser(user *models.User) map[string]any {
 func (s *Server) writeError(w http.ResponseWriter, err error) {
 	status := http.StatusInternalServerError
 	message := "Внутренняя ошибка сервера"
+	code := ""
 	switch {
 	case errors.Is(err, service.ErrInvalidInput):
 		status, message = http.StatusBadRequest, err.Error()
@@ -208,14 +283,19 @@ func (s *Server) writeError(w http.ResponseWriter, err error) {
 		status, message = http.StatusForbidden, "Сначала подтвердите почту"
 	case errors.Is(err, repository.ErrCodeInvalid):
 		status, message = http.StatusBadRequest, "Неверный код подтверждения"
+		code = "INVALID_CODE"
 	case errors.Is(err, repository.ErrCodeExpired):
 		status, message = http.StatusBadRequest, "Код истёк. Запросите новый"
+		code = "CODE_EXPIRED"
 	case errors.Is(err, repository.ErrTooManyAttempts):
 		status, message = http.StatusTooManyRequests, "Слишком много попыток. Запросите новый код"
+		code = "CODE_ATTEMPTS_EXCEEDED"
 	case errors.Is(err, repository.ErrTooSoon):
 		status, message = http.StatusTooManyRequests, "Повторно запросить код можно через минуту"
 	case errors.Is(err, service.ErrInvalidCredentials):
 		status, message = http.StatusUnauthorized, "Неверные данные для входа"
+	case errors.Is(err, service.ErrInvalidRefresh):
+		status, message = http.StatusUnauthorized, "Сессия истекла. Войдите снова"
 	case errors.Is(err, service.ErrSelfFriendRequest):
 		status, message = http.StatusBadRequest, "Нельзя добавить самого себя"
 	case errors.Is(err, service.ErrUserNotFound):
@@ -230,7 +310,11 @@ func (s *Server) writeError(w http.ResponseWriter, err error) {
 	if status == http.StatusInternalServerError {
 		log.Printf("internal error: %v", err)
 	}
-	writeJSON(w, status, map[string]string{"error": message})
+	body := map[string]string{"error": message}
+	if code != "" {
+		body["code"] = code
+	}
+	writeJSON(w, status, body)
 }
 
 func (s *Server) emptyList(w http.ResponseWriter, r *http.Request) {

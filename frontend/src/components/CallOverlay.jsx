@@ -1,21 +1,11 @@
-import { Link, useLocation } from 'react-router-dom'
 import { useI18n } from '@/i18n'
 import { useCall } from '@/context/CallContext'
 import Avatar from '@/components/Avatar'
 import Icon from '@/assets/icon/Icon.jsx'
-import { CallControls } from '@/components/VoiceStage'
 
 export default function CallOverlay() {
     const { t } = useI18n()
-    const location = useLocation()
-    const { active, status, incoming, notice, dismissNotice, acceptIncoming, declineIncoming } = useCall()
-
-    const stagePath = active
-        ? active.kind === 'call'
-            ? `/app/dm/${active.peer?.id}`
-            : `/app/voice/${active.roomId}`
-        : ''
-    const showDock = Boolean(active) && location.pathname !== stagePath
+    const { incoming, notice, dismissNotice, acceptIncoming, declineIncoming } = useCall()
 
     const peerName = incoming?.peer?.displayName || incoming?.peer?.name || ''
 
@@ -48,6 +38,7 @@ export default function CallOverlay() {
                             aria-label={t('call.accept')}
                         >
                             <Icon name="phone" />
+                            <span className="incoming-call__label">{t('call.accept')}</span>
                         </button>
 
                         <button
@@ -58,25 +49,9 @@ export default function CallOverlay() {
                             aria-label={t('call.decline')}
                         >
                             <Icon name="phone-off" />
+                            <span className="incoming-call__label">{t('call.decline')}</span>
                         </button>
                     </div>
-                </div>
-            )}
-
-            {showDock && (
-                <div className="call-dock" role="region" aria-label={active.name}>
-                    <Link to={stagePath} className="call-dock__info">
-                        <span className="call-dock__state">
-                            {status === 'ringing'
-                                ? t('call.calling', { name: active.name })
-                                : status === 'connecting'
-                                    ? t('call.connecting')
-                                    : t('voice.connected')}
-                        </span>
-                        <span className="call-dock__name">{active.name}</span>
-                    </Link>
-
-                    <CallControls variant="dock" />
                 </div>
             )}
 

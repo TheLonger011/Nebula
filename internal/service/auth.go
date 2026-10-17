@@ -22,6 +22,9 @@ var usernameRe = regexp.MustCompile(`^[A-Za-z0-9_]{3,16}$`)
 
 var ErrInvalidCredentials = errors.New("invalid credentials")
 
+// ErrInvalidRefresh is returned when a refresh token is unknown, expired or already used.
+var ErrInvalidRefresh = errors.New("invalid refresh token")
+
 type LoginInput struct {
 	Login     string
 	Password  string
@@ -100,6 +103,10 @@ func (s *AuthService) VerifyCode(ctx context.Context, email, code string) error 
 		return err
 	}
 	return s.codes.MarkVerified(ctx, email)
+}
+
+func (s *AuthService) ConfirmCode(ctx context.Context, email, code string) error {
+	return s.codes.Verify(ctx, email, code)
 }
 
 func (s *AuthService) issueTokens(ctx context.Context, userID uuid.UUID, userAgent string) (string, string, error) {
@@ -216,4 +223,103 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*AuthResult,
 		return nil, fmt.Errorf("issue tokens: %w", err)
 	}
 	return &AuthResult{User: user, AccessToken: access, RefreshToken: refresh}, nil
+}
+
+func (s *AuthService) Refresh(ctx context.Context, refreshToken, userAgent string) (*AuthResult, error) {
+	refreshToken = strings.TrimSpace(refreshToken)
+	if refreshToken == "" {
+		return nil, ErrInvalidRefresh
+	}
+
+	stored, err := s.refreshTokens.Consume(ctx, auth.HashRefresh(refreshToken))
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrInvalidRefresh
+		}
+		return nil, err
+	}
+
+	user, err := s.users.GetByID(ctx, stored.UserID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrInvalidRefresh
+		}
+		return nil, fmt.Errorf("get user: %w", err)
+	}
+
+	access, refresh, err := s.issueTokens(ctx, user.ID, userAgent)
+	if err != nil {
+		return nil, fmt.Errorf("issue tokens: %w", err)
+	}
+	return &AuthResult{User: user, AccessToken: access, RefreshToken: refresh}, nil
+}
+
+func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
+	refreshToken = strings.TrimSpace(refreshToken)
+	if refreshToken == "" {
+		return nil
+	}
+	if _, err := s.refreshTokens.Consume(ctx, auth.HashRefresh(refreshToken)); err != nil && !errors.Is(err, repository.ErrNotFound) {
+		return err
+	}
+	return nil
+}
+
+func resetScope(email string) string {
+	return "reset:" + strings.ToLower(strings.TrimSpace(email))
+}
+
+func (s *AuthService) RequestPasswordReset(ctx context.Context, email string) error {
+	if _, err := netmail.ParseAddress(strings.TrimSpace(email)); err != nil {
+		return fmt.Errorf("%w: invalid email", ErrInvalidInput)
+	}
+	email = strings.ToLower(strings.TrimSpace(email))
+
+	user, err := s.users.GetByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil
+		}
+		return fmt.Errorf("get user: %w", err)
+	}
+
+	code, err := auth.GenerateCode()
+	if err != nil {
+		return fmt.Errorf("generate code: %w", err)
+	}
+	if err := s.codes.Save(ctx, resetScope(email), code); err != nil {
+		return err
+	}
+	if err := s.mailer.SendResetCode(user.Email, code); err != nil {
+		return fmt.Errorf("send code: %w", err)
+	}
+	return nil
+}
+
+func (s *AuthService) ResetPassword(ctx context.Context, email, code, password string) error {
+	if utf8.RuneCountInString(password) < 8 || len(password) > 72 {
+		return fmt.Errorf("%w: password must be 8-72 characters", ErrInvalidInput)
+	}
+	email = strings.ToLower(strings.TrimSpace(email))
+
+	if err := s.codes.Verify(ctx, resetScope(email), strings.TrimSpace(code)); err != nil {
+		return err
+	}
+
+	user, err := s.users.GetByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return repository.ErrCodeInvalid
+		}
+		return fmt.Errorf("get user: %w", err)
+	}
+
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return err
+	}
+	if err := s.users.UpdatePassword(ctx, user.ID, hash); err != nil {
+		return err
+	}
+	return s.refreshTokens.RevokeAllForUser(ctx, user.ID)
 }

@@ -31,7 +31,6 @@ func (t *TokenManager) GenerateAccess(userID uuid.UUID) (string, error) {
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(t.accessTTL)),
 		},
 	}
-
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString(t.secret)
 	if err != nil {

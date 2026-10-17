@@ -4,6 +4,8 @@ import { markRecentVisit } from '@/utils/recentVisits'
 import RequireAuth from './RequireAuth'
 import Sidebar from './Sidebar'
 import MobileNav from './MobileNav'
+import MobileMenu from './MobileMenu'
+import SwipeNav from './SwipeNav'
 import { NotificationsProvider } from '@/context/NotificationsContext'
 import { CallProvider } from '@/context/CallContext'
 
@@ -26,6 +28,8 @@ export default function AppLayout() {
                     <Sidebar />
                     <RecentVisitTracker />
                     <Outlet />
+                    <MobileMenu />
+                    <SwipeNav />
                     <MobileNav />
                 </CallProvider>
             </NotificationsProvider>

@@ -37,6 +37,16 @@ const state = {
 }
 
 export const mockApi = {
+    async getSpaceFiles() {
+        await wait()
+        return { items: [], hasMore: false }
+    },
+
+    async getSpaceThreads() {
+        await wait()
+        return { items: [], hasMore: false }
+    },
+
     async login({ login, password }) {
         await wait()
 

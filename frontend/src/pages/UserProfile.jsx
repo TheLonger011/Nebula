@@ -229,20 +229,6 @@ export default function UserProfile() {
                             </div>
 
                             <section className="profile-edit-section profile-shared-spaces">
-                                <h2>{t('userProfile.sharedChannels')}</h2>
-                                {user.sharedChannels?.length ? (
-                                    <div className="profile-shared-spaces__list">
-                                        {user.sharedChannels.map((channel) => (
-                                            <Link key={channel.id} to={channel.type === 'voice' ? `/app/voice/${channel.id}` : `/app/channels/${channel.id}`} className="profile-shared-channel">
-                                                <span className="profile-shared-channel__icon"><Icon name={channel.type === 'voice' ? 'volume-2' : 'hash'} /></span>
-                                                <div><strong>{channel.name}</strong><span>{channel.spaceName}</span></div>
-                                            </Link>
-                                        ))}
-                                    </div>
-                                ) : <p className="muted">{t('userProfile.noSharedChannels')}</p>}
-                            </section>
-
-                            <section className="profile-edit-section profile-shared-spaces">
                                 <h2>{t('userProfile.sharedSpaces')}</h2>
                                 {user.sharedSpaces?.length ? (
                                     <div className="profile-shared-spaces__list">

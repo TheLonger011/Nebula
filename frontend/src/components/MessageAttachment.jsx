@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { recordDownload } from '@/utils/downloads'
 import { fetchBlob } from '@/api/client'
 import { useI18n } from '@/i18n'
 import { formatBytes, formatDuration } from '@/utils/format'
@@ -32,6 +33,7 @@ async function saveFile(attachment) {
     document.body.appendChild(link)
     link.click()
     link.remove()
+    recordDownload(attachment)
 }
 
 function ImageAttachment({ attachment }) {
@@ -75,6 +77,19 @@ function VideoAttachment({ attachment }) {
     )
 }
 
+const WAVE_BARS = 44
+
+function waveformHeights(seedText) {
+    let seed = 2166136261
+    for (const ch of String(seedText || 'voice')) seed = Math.imul(seed ^ ch.charCodeAt(0), 16777619) >>> 0
+    return Array.from({ length: WAVE_BARS }, (_, index) => {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+        const noise = (seed >>> 8) / 16777215
+        const envelope = 0.55 + 0.45 * Math.sin((index / WAVE_BARS) * Math.PI * 2.4 + (seed % 7))
+        return Math.round(18 + 82 * Math.min(1, Math.max(0.08, noise * 0.7 + envelope * 0.35)))
+    })
+}
+
 function VoiceAttachment({ attachment }) {
     const { t } = useI18n()
     const [active, setActive] = useState(false)
@@ -116,6 +131,7 @@ function VoiceAttachment({ attachment }) {
     }
 
     const progress = duration ? Math.min(1, position / duration) : 0
+    const bars = useMemo(() => waveformHeights(attachment.id || attachment.url), [attachment.id, attachment.url])
 
     return (
         <div className="attach-voice">
@@ -137,7 +153,13 @@ function VoiceAttachment({ attachment }) {
                 aria-valuemax={Math.round(duration / 1000)}
                 aria-valuenow={Math.round(position / 1000)}
             >
-                <div className="attach-voice__fill" style={{ width: `${progress * 100}%` }} />
+                {bars.map((height, index) => (
+                    <span
+                        key={index}
+                        className={`attach-voice__bar${(index + 0.5) / WAVE_BARS <= progress ? ' is-played' : ''}`}
+                        style={{ height: `${height}%` }}
+                    />
+                ))}
             </div>
 
             <span className="attach-voice__time">

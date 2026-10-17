@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { api } from '@/api'
 import Avatar from '@/components/Avatar'
 import Icon from '@/assets/icon/Icon.jsx'
 import { useCall } from '@/context/CallContext'
 import { useI18n } from '@/i18n'
 import { useAppEvent } from '@/hooks/useAppEvent'
+import { SPACE_NAV_EVENT } from './SpaceNavButton'
 
 export default function SpaceChannelSidebar({ spaceId, activeChannelId, spaceName }) {
     const { t } = useI18n()
@@ -16,6 +17,8 @@ export default function SpaceChannelSidebar({ spaceId, activeChannelId, spaceNam
     const [channelName, setChannelName] = useState('')
     const [creating, setCreating] = useState(false)
     const [error, setError] = useState('')
+    const [mobileOpen, setMobileOpen] = useState(false)
+    const { pathname } = useLocation()
 
     const load = useCallback(async () => {
         try {
@@ -55,6 +58,15 @@ export default function SpaceChannelSidebar({ spaceId, activeChannelId, spaceNam
 
     useAppEvent(['space_updated'], load)
 
+    useEffect(() => {
+        const toggle = () => setMobileOpen((open) => !open)
+        window.addEventListener(SPACE_NAV_EVENT, toggle)
+        return () => window.removeEventListener(SPACE_NAV_EVENT, toggle)
+    }, [])
+
+    // Picking a channel or opening the settings closes the drawer.
+    useEffect(() => { setMobileOpen(false) }, [pathname])
+
     const canCreate = Boolean(space?.can?.manageChannels)
     const canManage = Boolean(space?.canManage)
     const settingsLink = (extra = '') => `/app/spaces/${spaceId}/settings${extra}`
@@ -62,7 +74,15 @@ export default function SpaceChannelSidebar({ spaceId, activeChannelId, spaceNam
     const voiceChannels = space?.voiceRooms || []
 
     return (
-        <aside className="space-sidebar">
+        <>
+        <button
+            type="button"
+            className={`space-sidebar-backdrop${mobileOpen ? ' is-open' : ''}`}
+            aria-label={t('spacenav.close')}
+            tabIndex={-1}
+            onClick={() => setMobileOpen(false)}
+        />
+        <aside className={`space-sidebar${mobileOpen ? ' is-mobile-open' : ''}`}>
             <div className="space-sidebar__heading">
                 <Link to={`/app/spaces/${spaceId}`} className="space-sidebar__heading-link">
                     {space?.avatarUrl || space?.avatar_url
@@ -158,5 +178,6 @@ export default function SpaceChannelSidebar({ spaceId, activeChannelId, spaceNam
 
 
         </aside>
+        </>
     )
 }

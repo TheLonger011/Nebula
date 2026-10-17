@@ -10,38 +10,73 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+func normalizeEmail(w http.ResponseWriter, raw string) (string, bool) {
+	email := strings.ToLower(strings.TrimSpace(raw))
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Address != email {
+		badRequest(w, "Укажите корректный email")
+		return "", false
+	}
+	return email, true
+}
+
+// POST /api/me/email/code — sends a confirmation code to the new address.
+func (s *Server) requestEmailChangeCode(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, http.MethodPost) {
+		return
+	}
+	var input struct {
+		Email string `json:"email"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	email, ok := normalizeEmail(w, input.Email)
+	if !ok {
+		return
+	}
+	var current *string
+	if err := s.db.QueryRow(r.Context(), `SELECT email FROM users WHERE id=$1 AND deleted_at IS NULL`, currentUserID(r)).Scan(&current); err != nil {
+		s.writeError(w, err)
+		return
+	}
+	if current != nil && strings.EqualFold(*current, email) {
+		badRequest(w, "Это уже ваш текущий email")
+		return
+	}
+	// SendCode rejects addresses already in use, applies the resend cooldown and mails the code.
+	if err := s.auth.SendCode(r.Context(), email); err != nil {
+		s.writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "email": email})
+}
+
+// POST /api/me/email/verify — confirms the code and switches the account email.
 func (s *Server) changeEmail(w http.ResponseWriter, r *http.Request) {
 	if !method(w, r, http.MethodPost) {
 		return
 	}
 	var input struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email string `json:"email"`
+		Code  string `json:"code"`
 	}
 	if !decode(w, r, &input) {
 		return
 	}
-	email := strings.ToLower(strings.TrimSpace(input.Email))
-	parsed, err := mail.ParseAddress(email)
-	if err != nil || parsed.Address != email {
-		badRequest(w, "Укажите корректный email")
+	email, ok := normalizeEmail(w, input.Email)
+	if !ok {
 		return
 	}
-	if len(input.Password) == 0 {
-		badRequest(w, "Введите текущий пароль")
+	if len(strings.TrimSpace(input.Code)) == 0 {
+		badRequest(w, "Введите код подтверждения")
 		return
 	}
-	id := currentUserID(r)
-	var hash string
-	if err := s.db.QueryRow(r.Context(), `SELECT password_hash FROM users WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&hash); err != nil {
+	if err := s.auth.ConfirmCode(r.Context(), email, strings.TrimSpace(input.Code)); err != nil {
 		s.writeError(w, err)
 		return
 	}
-	if !auth.CheckPasswordHash(input.Password, hash) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Текущий пароль указан неверно"})
-		return
-	}
-	_, err = s.db.Exec(r.Context(), `UPDATE users SET email=$2, updated_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id, email)
+	_, err := s.db.Exec(r.Context(), `UPDATE users SET email=$2, updated_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, currentUserID(r), email)
 	if err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "Этот email уже используется"})

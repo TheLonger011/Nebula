@@ -8,6 +8,7 @@ import eyeOff from './eye-off.svg'
 import folder from './folder.svg'
 import gitBranch from './git-branch.svg'
 import hash from './hash.svg'
+import headphones from './headphones.svg'
 import house from './house.svg'
 import lock from './lock.svg'
 import logIn from './log-in.svg'
@@ -88,6 +89,7 @@ export const ICONS = {
     video: video,
     'volume-1': volume1,
     'volume-2': volume2,
+    headphones,
     'volume-off': volumeOff,
     x: x,
 }

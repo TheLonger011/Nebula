@@ -16,6 +16,7 @@ import (
 type spaceInput struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	IsPublic    bool   `json:"isPublic"`
 }
 
 type channelInput struct {
@@ -29,7 +30,7 @@ func (s *Server) spaceRoutes(w http.ResponseWriter, r *http.Request) {
 	if path == "" {
 		switch r.Method {
 		case http.MethodGet:
-			rows, err := s.db.Query(r.Context(), `SELECT s.id, s.name, COALESCE(s.description, ''), (SELECT COUNT(*) FROM space_members sm WHERE sm.space_id=s.id) AS members, COALESCE(s.avatar_url, '') FROM spaces s WHERE s.owner_id=$1 OR EXISTS (SELECT 1 FROM space_members sm WHERE sm.space_id=s.id AND sm.user_id=$1) ORDER BY s.created_at DESC`, userID)
+			rows, err := s.db.Query(r.Context(), `SELECT s.id, s.name, COALESCE(s.description, ''), (SELECT COUNT(*) FROM space_members sm WHERE sm.space_id=s.id) AS members, COALESCE(s.avatar_url, ''), s.is_public FROM spaces s WHERE s.owner_id=$1 OR EXISTS (SELECT 1 FROM space_members sm WHERE sm.space_id=s.id AND sm.user_id=$1) ORDER BY s.created_at DESC`, userID)
 			if err != nil {
 				s.writeError(w, err)
 				return
@@ -40,11 +41,12 @@ func (s *Server) spaceRoutes(w http.ResponseWriter, r *http.Request) {
 				var id uuid.UUID
 				var name, description, avatarURL string
 				var members int
-				if err := rows.Scan(&id, &name, &description, &members, &avatarURL); err != nil {
+				var isPublic bool
+				if err := rows.Scan(&id, &name, &description, &members, &avatarURL, &isPublic); err != nil {
 					s.writeError(w, err)
 					return
 				}
-				items = append(items, map[string]any{"id": id, "name": name, "description": description, "avatarUrl": avatarURL, "avatar_url": avatarURL, "members": members})
+				items = append(items, map[string]any{"id": id, "name": name, "description": description, "avatarUrl": avatarURL, "avatar_url": avatarURL, "members": members, "isPublic": isPublic})
 			}
 			writeJSON(w, http.StatusOK, items)
 		case http.MethodPost:
@@ -65,7 +67,7 @@ func (s *Server) spaceRoutes(w http.ResponseWriter, r *http.Request) {
 			}
 			defer tx.Rollback(r.Context())
 			var id uuid.UUID
-			if err := tx.QueryRow(r.Context(), `INSERT INTO spaces(owner_id,name,description) VALUES($1,$2,$3) RETURNING id`, userID, input.Name, input.Description).Scan(&id); err != nil {
+			if err := tx.QueryRow(r.Context(), `INSERT INTO spaces(owner_id,name,description,is_public) VALUES($1,$2,$3,$4) RETURNING id`, userID, input.Name, input.Description, input.IsPublic).Scan(&id); err != nil {
 				s.writeError(w, err)
 				return
 			}
@@ -81,7 +83,7 @@ func (s *Server) spaceRoutes(w http.ResponseWriter, r *http.Request) {
 				s.writeError(w, err)
 				return
 			}
-			writeJSON(w, http.StatusCreated, map[string]any{"id": id, "name": input.Name, "description": input.Description, "members": 1})
+			writeJSON(w, http.StatusCreated, map[string]any{"id": id, "name": input.Name, "description": input.Description, "members": 1, "isPublic": input.IsPublic})
 		default:
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Метод не поддерживается"})
 		}
@@ -96,7 +98,8 @@ func (s *Server) spaceRoutes(w http.ResponseWriter, r *http.Request) {
 	var ownerID uuid.UUID
 	var name, description string
 	var avatarURL *string
-	err = s.db.QueryRow(r.Context(), `SELECT owner_id,name,COALESCE(description, ''),avatar_url FROM spaces WHERE id=$1`, spaceID).Scan(&ownerID, &name, &description, &avatarURL)
+	var isPublic bool
+	err = s.db.QueryRow(r.Context(), `SELECT owner_id,name,COALESCE(description, ''),avatar_url,is_public FROM spaces WHERE id=$1`, spaceID).Scan(&ownerID, &name, &description, &avatarURL, &isPublic)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Группа не найдена"})
 		return
@@ -106,6 +109,30 @@ func (s *Server) spaceRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	perms := s.spacePerms(r.Context(), spaceID, userID)
+	// Private spaces do not exist for non-members; they are reachable only through an invite link.
+	if !perms.Member && !isPublic {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Группа не найдена"})
+		return
+	}
+	if len(parts) == 2 && parts[1] == "join" {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Метод не поддерживается"})
+			return
+		}
+		tag, err := s.db.Exec(r.Context(), `INSERT INTO space_members(space_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, spaceID, userID)
+		if err != nil {
+			s.writeError(w, err)
+			return
+		}
+		if tag.RowsAffected() > 0 {
+			s.notifySpace(r.Context(), spaceID, "space_updated")
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": spaceID, "alreadyMember": tag.RowsAffected() == 0})
+		return
+	}
+	if s.spacePanelRoutes(w, r, parts, spaceID, userID, perms.Member) {
+		return
+	}
 	if s.spaceManageRoutes(w, r, parts, spaceID, perms, name, description, str(avatarURL), ownerID) {
 		return
 	}
@@ -174,7 +201,7 @@ func (s *Server) spaceRoutes(w http.ResponseWriter, r *http.Request) {
 		if ownerID == userID {
 			role = "owner"
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"id": spaceID, "name": name, "description": description, "avatarUrl": str(avatarURL), "avatar_url": str(avatarURL), "channels": channels, "voiceRooms": voices, "members": memberCount, "ownerId": ownerID, "isMember": perms.Member, "role": role, "permissions": perms.effective(), "can": perms.dto(), "canManage": perms.CanManage()})
+		writeJSON(w, http.StatusOK, map[string]any{"id": spaceID, "name": name, "description": description, "avatarUrl": str(avatarURL), "avatar_url": str(avatarURL), "channels": channels, "voiceRooms": voices, "members": memberCount, "isPublic": isPublic, "ownerId": ownerID, "isMember": perms.Member, "role": role, "permissions": perms.effective(), "can": perms.dto(), "canManage": perms.CanManage()})
 		return
 	}
 	if len(parts) == 2 && parts[1] == "members" {

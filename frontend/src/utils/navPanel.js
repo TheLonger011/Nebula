@@ -33,6 +33,8 @@ function createPanel() {
 
 export const navPanel = createPanel()
 export const rightPanel = createPanel()
+// Phone-only left drawer with spaces and direct messages.
+export const menuPanel = createPanel()
 
 export function usePanel(panel) {
     return useSyncExternalStore(panel.subscribe, panel.get, () => false)
@@ -40,3 +42,4 @@ export function usePanel(panel) {
 
 export const useNavPanel = () => usePanel(navPanel)
 export const useRightPanel = () => usePanel(rightPanel)
+export const useMenuPanel = () => usePanel(menuPanel)

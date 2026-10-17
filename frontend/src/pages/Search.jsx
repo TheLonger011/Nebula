@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import RightSidebar from '@/components/RightSidebar'
 import PageHeader from '@/components/PageHeader'
 import Avatar from '@/components/Avatar'
@@ -16,6 +16,15 @@ const TYPES = [
 
 export default function Search() {
     const { t } = useI18n()
+    const navigate = useNavigate()
+    const joinFound = async (id) => {
+        try {
+            await api.joinSpace(id)
+            navigate(`/app/spaces/${id}`)
+        } catch {
+            window.alert(t('spaces.joinFailed'))
+        }
+    }
     const [params] = useSearchParams()
     const initialType = TYPES.some((item) => item.value === params.get('type'))
         ? params.get('type')
@@ -180,12 +189,22 @@ export default function Search() {
                                                     {item.description || ''}
                                                 </div>
                                             </div>
-                                            <Link
-                                                className="btn btn--ghost"
-                                                to={`/app/spaces/${item.id}`}
-                                            >
-                                                {t('common.open')}
-                                            </Link>
+                                            {item.isMember === false ? (
+                                                <button
+                                                    type="button"
+                                                    className="btn btn--primary"
+                                                    onClick={() => joinFound(item.id)}
+                                                >
+                                                    {t('spaces.join')}
+                                                </button>
+                                            ) : (
+                                                <Link
+                                                    className="btn btn--ghost"
+                                                    to={`/app/spaces/${item.id}`}
+                                                >
+                                                    {t('common.open')}
+                                                </Link>
+                                            )}
                                         </>
                                     )}
 
